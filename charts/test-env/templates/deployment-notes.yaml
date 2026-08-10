@@ -1,0 +1,113 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "test-env.notesServiceName" . }}
+  labels:
+    {{- include "test-env.componentLabels" (dict "context" . "component" .Values.notes.component) | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.notes.replicaCount }}
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.notes.component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "test-env.componentLabels" (dict "context" . "component" .Values.notes.component) | nindent 8 }}
+      annotations:
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "test-env.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: notes-service
+          image: {{ include "test-env.image" (dict "context" . "component" "notes-service") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.notes.port }}
+              protocol: TCP
+          env:
+            {{- include "test-env.commonEnv" . | nindent 12 }}
+            - name: SERVICE_NAME
+              value: notes-service
+            - name: PORT
+              value: {{ .Values.notes.port | quote }}
+            - name: DATABASE_PATH
+              value: /data/notes.sqlite
+            - name: AUTH_MODE
+              value: {{ .Values.notes.authMode | quote }}
+            # Cluster DNS: this is the service-to-service hop the environment
+            # exists to exercise.
+            - name: AUTH_SERVICE_URL
+              value: {{ include "test-env.authUrl" . | quote }}
+            - name: AUTH_VERIFY_TIMEOUT_MS
+              value: {{ .Values.notes.authVerifyTimeoutMs | quote }}
+            - name: AUTH_CACHE_TTL_MS
+              value: {{ .Values.notes.authCacheTtlMs | quote }}
+            - name: MAX_PAGE_SIZE
+              value: {{ .Values.notes.maxPageSize | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.notes.logLevel | quote }}
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.notes.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          emptyDir:
+            sizeLimit: {{ .Values.notes.storage.sizeLimit }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 32Mi
+      {{- with .Values.notes.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.notes.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.notes.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

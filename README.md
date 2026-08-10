@@ -2,6 +2,7 @@
 
 [![Verify](https://github.com/AKogut/ephemeral-k8s-test-envs/actions/workflows/verify.yml/badge.svg)](https://github.com/AKogut/ephemeral-k8s-test-envs/actions/workflows/verify.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Helm](https://img.shields.io/badge/helm-v3-0f1689?logo=helm&logoColor=white)](https://helm.sh/)
 [![Node](https://img.shields.io/badge/node-22-5fa04e?logo=node.js&logoColor=white)](https://nodejs.org/)
 
 **Every pull request gets its own Kubernetes namespace. The API suite runs
@@ -12,9 +13,55 @@ No shared staging environment to queue for. No "it passed on staging" where
 staging was in an unknown state. No leftover namespaces quietly costing money
 after the PR is merged.
 
-> **Status: Phase 0 of 5.** This is being built in the open, one phase per pull
-> request. The plan is tracked as [6 epics and 42 tasks](#roadmap); this branch
-> delivers the application the environments will run.
+> **Status: Phase 1 of 5.** Built in the open, one phase per pull request. The
+> plan is [6 epics and 42 tasks](#roadmap); this branch delivers the Helm chart
+> that turns the application into an isolated, repeatable environment.
+
+---
+
+## Phase 1 — one command, one isolated environment
+
+```bash
+./scripts/local-demo.sh
+```
+
+Creates a kind cluster, builds the three images, side-loads them, installs the
+chart into its own namespace, waits for readiness, runs a register → login →
+create-note journey **from inside the cluster** so it travels through real
+Service DNS, and cleans up afterwards. No cloud account.
+
+The same chart produces `pr-123`, `pr-456` and `demo-local` with nothing edited:
+
+```bash
+helm install pr-123 ./charts/test-env \
+  --namespace pr-123 --create-namespace \
+  --set image.tag=$GITHUB_SHA
+```
+
+Eight objects: three Deployments, three Services, a generated Secret, and a
+ServiceAccount that holds no permissions and mounts no token. Full value
+reference in [charts/test-env/README.md](charts/test-env/README.md).
+
+### Defaults the chart applies — and CI asserts
+
+- Non-root, read-only root filesystem, all capabilities dropped,
+  `seccompProfile: RuntimeDefault`. Anything that needs to write gets an explicit
+  `emptyDir`.
+- Application pods mount **no** service account token. A reverse proxy and two
+  CRUD services have no business holding a cluster credential.
+- Startup, liveness and readiness probes on every container — with liveness never
+  touching the database, so a slow query cannot cause a restart loop.
+- A JWT signing key generated per release and **preserved across upgrades**, so
+  redeploying a PR environment does not invalidate tokens mid-run.
+- The gateway runs two replicas; the data services run one, because SQLite is
+  pod-local. Scaling a service whose state lives in the pod is not a
+  demonstration of scaling.
+
+CI does not take the chart's word for any of it. It renders the manifests and
+asserts the security context is genuinely there
+([`scripts/assert-security-defaults.py`](scripts/assert-security-defaults.py)),
+and asserts the chart **refuses** to render invalid values — because a guard that
+quietly stopped guarding looks exactly like one that still works.
 
 ---
 
@@ -42,37 +89,14 @@ secret, so the check is a local HMAC. It is configured not to.
 
 With `AUTH_MODE=verify-with-auth-service`, the first use of each token triggers a
 real `GET /me` against auth-service. That is what turns three co-located pods into
-a system that exercises service discovery, a bounded verification cache, a
-timeout, and a readiness gate that returns **503, not 401**, when the upstream is
-unreachable — because "I cannot tell" is not "you are unauthorised".
-
-### Run it
-
-```bash
-npm run install:all
-npm run compose:up
-
-curl -s localhost:3000/readyz | jq
-
-TOKEN=$(curl -s -X POST localhost:3000/auth/register \
-  -H 'content-type: application/json' \
-  -d '{"email":"me@example.test","password":"correct-horse-battery-staple"}' >/dev/null &&
-  curl -s -X POST localhost:3000/auth/login \
-  -H 'content-type: application/json' \
-  -d '{"email":"me@example.test","password":"correct-horse-battery-staple"}' | jq -r .token)
-
-curl -s -X POST localhost:3000/notes \
-  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
-  -d '{"title":"Hello","tags":["demo"]}' | jq
-
-npm run compose:down
-```
+a system that exercises cluster DNS, a bounded verification cache, a timeout, and
+a readiness gate that returns **503, not 401**, when the upstream is unreachable —
+because "I cannot tell" is not "you are unauthorised".
 
 ### Images built for the job they actually do
 
-Every image is a three-stage build — production dependencies, compile, runtime.
-The compiler, the type definitions and the native toolchain for `better-sqlite3`
-all stay in the discarded stages.
+Three-stage builds. The compiler, the type definitions and the native toolchain
+for `better-sqlite3` all stay in the discarded stages.
 
 | Image | Naive single-stage (`node:22`) | This repo (`node:22-slim`, 3-stage) | Reduction |
 |---|---:|---:|---:|
@@ -80,8 +104,7 @@ all stay in the discarded stages.
 | `gateway` | 1.67 GB | **351 MB** | **79%** |
 | `notes-service` | — | 378 MB | |
 
-<sub>Measured with `docker image inspect`. Every container also runs as a
-non-root user with a `HEALTHCHECK` that needs no extra tooling in the image.</sub>
+<sub>Measured with `docker image inspect`, not estimated.</sub>
 
 ---
 
@@ -91,14 +114,27 @@ Planned as 6 epics and 42 tasks, delivered one pull request per phase.
 
 | Phase | Epic | Delivers | Status |
 |---|---|---|---|
-| 0 | [#1](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/1) | Three containerised services | **this PR** |
-| 1 | [#2](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/2) | A Helm chart that stands up one isolated environment | planned |
+| 0 | [#1](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/1) | Three containerised services | done |
+| 1 | [#2](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/2) | A Helm chart that stands up one isolated environment | **this PR** |
 | 2 | [#3](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/3) | The suite sharded across parallel Kubernetes Jobs | planned |
 | 3 | [#4](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/4) | Per-shard results merged into one report | planned |
 | 4 | [#5](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/5) | Teardown guarantees, and a step that proves them | planned |
 | 5 | [#6](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/6) | The end-to-end CI pipeline, docs and wiki | planned |
 
 Board: [Ephemeral K8s test environments](https://github.com/users/AKogut/projects/18)
+
+## Commands
+
+```bash
+npm run install:all      # dependencies for the three services
+npm run demo             # kind cluster → build → deploy → smoke test → clean up
+npm run demo:keep        # …but leave the environment running
+npm run demo:cleanup     # remove a previous run's leftovers
+
+npm run helm:lint        # lint the chart with both value sets
+npm run helm:template    # render it
+npm run compose:up       # the application under docker compose, no cluster
+```
 
 ## Repository layout
 
@@ -107,6 +143,8 @@ app/
   auth-service/     JWT issuer — Express + SQLite + scrypt
   notes-service/    Notes CRUD — per-owner scoping, upstream token verification
   gateway/          Reverse proxy — hand-rolled on fetch, zero proxy dependencies
+charts/test-env/    The Helm chart — one isolated environment per release
+scripts/            local-demo.sh, assert-security-defaults.py
 ```
 
 ## License

@@ -1,0 +1,53 @@
+# CI overrides, applied on top of values.yaml:
+#
+#   helm install pr-123 ./charts/test-env \
+#     --namespace pr-123 --create-namespace \
+#     --values charts/test-env/values-ci.yaml \
+#     --set image.tag=$GITHUB_SHA
+#
+# The theme is that a GitHub-hosted runner is a 4 vCPU / 16 GB machine running
+# the whole cluster inside itself. Requests are sized so the application pods,
+# the control plane and (from Phase 2) several test pods all fit on one node;
+# leaving the defaults in place means pods sit Pending with "Insufficient cpu",
+# which is a slow and confusing way to discover the problem.
+
+image:
+  # The tag is a commit SHA, so a cached layer for that SHA is genuinely the
+  # same build.
+  pullPolicy: IfNotPresent
+
+auth:
+  replicaCount: 1
+  # Cheaper KDF: this is a throwaway environment holding throwaway accounts, and
+  # at cost 14 password hashing would dominate the suite that arrives in Phase 2.
+  scryptCostLog2: 12
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 400m
+      memory: 192Mi
+
+notes:
+  replicaCount: 1
+  authMode: verify-with-auth-service
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 400m
+      memory: 192Mi
+
+gateway:
+  # Still more than one, so a CI run exercises the multi-replica path rather
+  # than only ever testing a single pod.
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 25m
+      memory: 48Mi
+    limits:
+      cpu: 400m
+      memory: 128Mi

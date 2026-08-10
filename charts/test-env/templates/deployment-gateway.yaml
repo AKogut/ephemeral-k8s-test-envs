@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "test-env.gatewayServiceName" . }}
+  labels:
+    {{- include "test-env.componentLabels" (dict "context" . "component" .Values.gateway.component) | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.gateway.replicaCount }}
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.gateway.component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "test-env.componentLabels" (dict "context" . "component" .Values.gateway.component) | nindent 8 }}
+      annotations:
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "test-env.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: gateway
+          image: {{ include "test-env.image" (dict "context" . "component" "gateway") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.gateway.port }}
+              protocol: TCP
+          env:
+            {{- include "test-env.commonEnv" . | nindent 12 }}
+            - name: SERVICE_NAME
+              value: gateway
+            - name: PORT
+              value: {{ .Values.gateway.port | quote }}
+            - name: AUTH_SERVICE_URL
+              value: {{ include "test-env.authUrl" . | quote }}
+            - name: NOTES_SERVICE_URL
+              value: {{ include "test-env.notesUrl" . | quote }}
+            - name: PROXY_TIMEOUT_MS
+              value: {{ .Values.gateway.proxyTimeoutMs | quote }}
+            - name: READINESS_TIMEOUT_MS
+              value: {{ .Values.gateway.readinessTimeoutMs | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.gateway.logLevel | quote }}
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            # Liveness deliberately hits /healthz, not /readyz: /readyz fans out
+            # to both upstreams, so a briefly unavailable notes-service would
+            # otherwise restart every gateway pod at once.
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.gateway.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 32Mi
+      {{- if gt (int .Values.gateway.replicaCount) 1 }}
+      # Spread replicas over nodes where possible, but never block scheduling on
+      # a single-node kind cluster.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.gateway.component) | nindent 14 }}
+      {{- end }}
+      {{- with .Values.gateway.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.gateway.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.gateway.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
