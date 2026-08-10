@@ -15,6 +15,8 @@
   "scripts": {
     "install:all": "npm --prefix app/auth-service install && npm --prefix app/notes-service install && npm --prefix app/gateway install && npm --prefix scripts install && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm --prefix tests/api install",
     "build": "npm --prefix app/auth-service run build && npm --prefix app/notes-service run build && npm --prefix app/gateway run build && npm --prefix scripts run build",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "typecheck": "npm --prefix app/auth-service run typecheck && npm --prefix app/notes-service run typecheck && npm --prefix app/gateway run typecheck && npm --prefix scripts run typecheck && npm --prefix tests/api run typecheck",
     "compose:up": "docker compose up --build -d",
     "compose:down": "docker compose down -v",
@@ -29,5 +31,12 @@
     "demo:shards": "./scripts/local-demo.sh --shards 8",
     "compose:test": "docker compose --profile test run --rm api-tests",
     "ci:install": "npm --prefix app/auth-service ci && npm --prefix app/notes-service ci && npm --prefix app/gateway ci && npm --prefix scripts ci && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm --prefix tests/api ci"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "globals": "^16.5.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.66.0"
   }
 }

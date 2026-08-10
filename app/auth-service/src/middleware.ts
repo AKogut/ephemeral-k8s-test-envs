@@ -38,9 +38,15 @@ export function accessLog() {
     const startedAt = process.hrtime.bigint();
     res.on('finish', () => {
       const durationMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+
+      // Express types `route` as `any`. Logging the matched pattern rather than
+      // the concrete path is what keeps `/notes/:id` from becoming one log
+      // bucket per note, so it is worth narrowing instead of dropping.
+      const route = req.route as { path?: string } | undefined;
+
       req.log.info('request', {
         method: req.method,
-        path: req.route?.path ?? req.path,
+        path: route?.path ?? req.path,
         status: res.statusCode,
         durationMs: Math.round(durationMs * 100) / 100,
       });

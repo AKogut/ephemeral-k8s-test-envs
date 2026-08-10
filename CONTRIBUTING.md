@@ -6,10 +6,15 @@ be, and pull requests are welcome.
 ## Getting set up
 
 ```bash
+npm install              # the linter, at the root
 npm run install:all      # dependencies for all five packages
 npm run build            # compile the three services and the scripts
 npm run test:unit        # 72 unit tests, no cluster required
 ```
+
+Both installs are needed before linting: the rules are type-aware, so ESLint
+builds a TypeScript program per package and a missing `node_modules` turns every
+import into `any` — which makes the interesting rules pass silently.
 
 For a full run against a real cluster you also need `docker`, `kind`, `kubectl`
 and `helm`:
@@ -24,11 +29,17 @@ run this and a full configuration reference.
 ## Before opening a pull request
 
 ```bash
+npm run lint             # ESLint, type-aware, all five packages
 npm run typecheck        # all five packages
 npm run test:unit
 npm run helm:lint        # if the chart changed
 shellcheck scripts/*.sh  # if a shell script changed
 ```
+
+`npm run lint:fix` applies what can be fixed mechanically. Disable comments are
+allowed where a rule is genuinely wrong about this code, but they must carry a
+reason on the line above — and a directive whose rule has stopped firing is an
+error, not a leftover.
 
 If you touched the chart, the Jobs or anything on the teardown path, run the full
 lifecycle:

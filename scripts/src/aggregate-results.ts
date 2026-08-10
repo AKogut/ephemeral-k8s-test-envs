@@ -76,7 +76,7 @@ async function readShardResults(dir: string): Promise<AllureTestResult[]> {
       results.push(JSON.parse(await readFile(path.join(dir, file), 'utf8')) as AllureTestResult);
     } catch (error) {
       process.stderr.write(
-        `  warning: skipping unreadable result ${file}: ${error instanceof Error ? error.message : error}\n`,
+        `  warning: skipping unreadable result ${file}: ${error instanceof Error ? error.message : String(error)}\n`,
       );
     }
   }

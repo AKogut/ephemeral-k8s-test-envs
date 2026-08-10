@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+
+  // `tsconfig.json` drives the build, so it excludes `*.test.ts` — test files
+  // have no business in `dist`. The side effect was that the 72 unit tests were
+  // never type-checked at all: `tsc` skipped them and `tsx` only transpiles.
+  //
+  // This config exists to close that hole. It is what `npm run typecheck` and
+  // ESLint read; the Dockerfile still builds from `tsconfig.json`.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": []
+}
