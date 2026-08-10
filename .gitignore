@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Test artifacts
+allure-results/
+allure-report/
+playwright-report/
+test-results/
+coverage/
+.tmp/
+results/
+
+# Local data
+*.sqlite
+*.sqlite-journal
+*.db
+data/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Editors / OS
+.DS_Store
+.idea/
+*.swp
+
+# Kubernetes / Helm
+charts/**/charts/
+charts/**/*.tgz
+kubeconfig
