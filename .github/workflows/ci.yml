@@ -37,7 +37,6 @@ permissions:
 env:
   NODE_VERSION: "22"
   REGISTRY: ghcr.io
-  IMAGE_NAMESPACE: ${{ github.repository }}
 
 jobs:
   chart:
@@ -447,6 +446,7 @@ jobs:
       packages: write
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
+      namespace: ${{ steps.meta.outputs.namespace }}
     strategy:
       fail-fast: true
       matrix:
@@ -469,13 +469,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolve image tag
+      - name: Resolve image tag and namespace
         id: meta
         run: |
           # The commit SHA, never a branch name: an environment must be pinned to
           # exactly the code that produced it, or the report describes something
           # other than the pull request.
           echo "tag=${{ github.event.pull_request.head.sha || github.sha }}" >> "$GITHUB_OUTPUT"
+
+          # A container repository name must be lowercase, and github.repository
+          # preserves the owner's capitalisation. Actions expressions have no
+          # lowercase function, so it is done here.
+          echo "namespace=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
 
@@ -491,7 +496,7 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.component }}:${{ steps.meta.outputs.tag }}
+          tags: ${{ env.REGISTRY }}/${{ steps.meta.outputs.namespace }}/${{ matrix.component }}:${{ steps.meta.outputs.tag }}
           build-args: |
             SERVICE_VERSION=${{ steps.meta.outputs.tag }}
             GIT_SHA=${{ steps.meta.outputs.tag }}
@@ -512,6 +517,7 @@ jobs:
       pull-requests: write
     env:
       IMAGE_TAG: ${{ needs.build.outputs.tag }}
+      IMAGE_NAMESPACE: ${{ needs.build.outputs.namespace }}
       SHARDS: ${{ inputs.shards || 4 }}
     steps:
       - uses: actions/checkout@v4
