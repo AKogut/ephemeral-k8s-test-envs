@@ -82,3 +82,10 @@ aggregator:
 
 resultsExporter:
   enabled: true
+
+teardown:
+  selfDestruct:
+    # On in CI: if the workflow is cancelled or the runner dies, the namespace
+    # still disappears. The pipeline's explicit teardown normally beats it to it.
+    enabled: true
+    afterSeconds: 1800

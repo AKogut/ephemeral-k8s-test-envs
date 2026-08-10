@@ -124,6 +124,14 @@ gets a new commit and its environment is redeployed.
 {{- printf "%s-aggregator" (include "test-env.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "test-env.teardownJobName" -}}
+{{- printf "%s-self-destruct-r%d" (include "test-env.fullname" .) (int .Release.Revision) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "test-env.teardownServiceAccountName" -}}
+{{- printf "%s-teardown" (include "test-env.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
 {{/* In-cluster URLs. Short DNS names would work, but the FQDN makes the
      cross-namespace behaviour explicit and survives a `search` domain change. */}}
 {{- define "test-env.authUrl" -}}

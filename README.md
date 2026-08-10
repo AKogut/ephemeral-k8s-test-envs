@@ -13,9 +13,57 @@ No shared staging environment to queue for. No "it passed on staging" where
 staging was in an unknown state. No leftover namespaces quietly costing money
 after the PR is merged.
 
-> **Status: Phase 3 of 5.** Built in the open, one phase per pull request. The
+> **Status: Phase 4 of 5.** Built in the open, one phase per pull request. The
 > plan is [6 epics and 42 tasks](#roadmap); this branch delivers
 > sharding: the suite split across parallel Kubernetes Jobs.
+
+---
+
+## Phase 4 — teardown is a tested property, not a claim
+
+```
+==> Verifying teardown of namespace demo-local
+    ✓ namespace 'demo-local' does not exist
+    ✓ no leftover clusterroles
+    ✓ no leftover clusterrolebindings
+    ✓ no orphaned PersistentVolumes
+✓ Teardown verified: nothing from this environment remains.
+```
+
+Three independent layers, because no single one covers every failure:
+
+| Layer | Mechanism | Covers | Misses |
+|---|---|---|---|
+| 1 | `ttlSecondsAfterFinished` on every Job | Finished pods, always | Deployments, Services, the PVC, the namespace |
+| 2 | `helm uninstall` + `kubectl delete namespace` | Failed deploys, failed tests, failed aggregation | The pipeline never running again |
+| 3 | A self-destruct Job that deletes its own namespace | **A cancelled workflow or a dead runner** | — |
+
+Layer 3 is the one most setups skip, and the one that matters when a run is
+cancelled mid-flight — because a cancelled job does not run its `if: always()`
+steps to completion. Its RBAC is pinned to a single namespace:
+
+```yaml
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "delete"]
+    resourceNames: [pr-123]     # this namespace and no other
+```
+
+If that token leaked, the worst it could do is delete the namespace it was
+already going to delete. Deleting the namespace also deletes the Job, so the pod
+is removed as a side effect of its own last action.
+
+### Three of the four checks are for things a namespace deletion does *not* remove
+
+| Check | Why it is not redundant |
+|---|---|
+| The namespace is gone | The headline claim. Waits through `Terminating`. |
+| No leftover `ClusterRole` / `ClusterRoleBinding` | **Cluster-scoped.** Deleting the namespace does not touch them. This is exactly how a cluster fills with junk from hundreds of PR environments. |
+| No `PersistentVolume` still bound | A `Retain` reclaim policy leaves it behind. On a cloud cluster that is a disk still being billed. |
+| No Helm release record | Stored separately; an orphan blocks reinstalling under the same name. |
+
+A failure in any of them **fails the build**. → [docs/cost-and-cleanup.md](docs/cost-and-cleanup.md)
 
 ---
 
@@ -274,8 +322,8 @@ Planned as 6 epics and 42 tasks, delivered one pull request per phase.
 | 0 | [#1](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/1) | Three containerised services | done |
 | 1 | [#2](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/2) | A Helm chart that stands up one isolated environment | done |
 | 2 | [#3](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/3) | The suite sharded across parallel Kubernetes Jobs | done |
-| 3 | [#4](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/4) | Per-shard results merged into one report | **this PR** |
-| 4 | [#5](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/5) | Teardown guarantees, and a step that proves them | planned |
+| 3 | [#4](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/4) | Per-shard results merged into one report | done |
+| 4 | [#5](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/5) | Teardown guarantees, and a step that proves them | **this PR** |
 | 5 | [#6](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/6) | The end-to-end CI pipeline, docs and wiki | planned |
 
 Board: [Ephemeral K8s test environments](https://github.com/users/AKogut/projects/18)
@@ -284,7 +332,7 @@ Board: [Ephemeral K8s test environments](https://github.com/users/AKogut/project
 
 ```bash
 npm run install:all      # dependencies for all five packages
-npm run demo             # kind → build → deploy → 4 shards → aggregate → clean up
+npm run demo             # kind → deploy → 4 shards → aggregate → destroy → prove it
 npm run demo:shards      # …with 8 shards
 npm run test:unit        # 72 unit tests, no cluster needed
 npm run shard:plan       # print the plan the pods will compute
@@ -305,7 +353,7 @@ app/
   gateway/          Reverse proxy — hand-rolled on fetch, zero proxy dependencies
 tests/api/          105 Playwright API tests + the shard entrypoint
 scripts/            shard planner, result merge, in-cluster k8s client (72 unit tests)
-                    local-demo.sh, fetch-results.sh
+                    local-demo.sh, fetch-results.sh, verify-teardown.sh
 charts/test-env/    The Helm chart — one isolated environment per release
 ```
 

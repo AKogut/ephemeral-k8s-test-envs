@@ -9,7 +9,9 @@ The aggregator gets its own account with exactly one permission: `get` on the on
 named shard Job it waits for. It needs neither `list` nor `watch`, because it
 polls a Job whose name it already knows.
 
-Phase 4 adds a third account for the teardown Job.
+The teardown Job gets a third. Deleting a Namespace needs a cluster-scoped
+permission, but `resourceNames` pins it to exactly one: if that token leaked, the
+worst it could do is delete the namespace it was already going to delete.
 */}}
 {{- if .Values.serviceAccount.create }}
 apiVersion: v1
@@ -62,5 +64,46 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: {{ include "test-env.aggregatorServiceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+
+{{- if .Values.teardown.selfDestruct.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "test-env.teardownServiceAccountName" . }}
+  labels:
+    {{- include "test-env.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  # Cluster-scoped objects are not removed by deleting the namespace, so the
+  # name carries it — which is what lets verify-teardown.sh find leftovers.
+  name: {{ include "test-env.teardownServiceAccountName" . }}-{{ .Release.Namespace }}
+  labels:
+    {{- include "test-env.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "delete"]
+    # Pinned to this namespace only.
+    resourceNames:
+      - {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "test-env.teardownServiceAccountName" . }}-{{ .Release.Namespace }}
+  labels:
+    {{- include "test-env.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "test-env.teardownServiceAccountName" . }}-{{ .Release.Namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "test-env.teardownServiceAccountName" . }}
     namespace: {{ .Release.Namespace }}
 {{- end }}

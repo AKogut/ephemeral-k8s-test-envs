@@ -313,7 +313,7 @@ jobs:
 
       - name: All three entrypoints respond
         run: |
-          for entry in aggregate-results wait-for-jobs; do
+          for entry in aggregate-results wait-for-jobs self-destruct; do
             docker run --rm --entrypoint node aggregator:ci "dist/$entry.js" --help | head -3
           done
 
@@ -351,6 +351,19 @@ jobs:
           assert s['passed'] is True
           print('merge, retry collapsing and flaky detection all correct')
           PY_INNER
+
+      - name: The self-destruct entrypoint refuses to run outside a pod
+        run: |
+          # It reads the service account token from the filesystem. Outside a
+          # pod there is none, and it must say so rather than doing something
+          # surprising.
+          if docker run --rm --entrypoint node aggregator:ci dist/self-destruct.js 2>&1 \
+               | grep -q 'only runs inside a pod'; then
+            echo "correctly refused to run outside a cluster"
+          else
+            echo "::error::self-destruct did not fail cleanly outside a pod"
+            exit 1
+          fi
 
       - name: A missing shard directory fails aggregation
         run: |
