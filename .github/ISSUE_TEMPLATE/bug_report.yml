@@ -1,0 +1,67 @@
+name: Bug report
+description: Something behaves differently from how it is documented
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - auth-service
+        - notes-service
+        - gateway
+        - API test suite
+        - Sharding
+        - Aggregation
+        - Helm chart
+        - Teardown
+        - CI workflow
+        - Documentation
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should happen
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happens instead
+      description: Include the error, the failing assertion, or the relevant log lines.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Where it happens
+      options:
+        - Local (bare Node)
+        - Local (docker compose)
+        - Local (kind + Helm)
+        - GitHub Actions
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: If it is a cluster issue, `kubectl -n <ns> get pods` and the relevant pod logs. The `x-request-id` header, if you have one.
+      render: shell

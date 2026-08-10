@@ -1,0 +1,47 @@
+version: 2
+updates:
+  # Five independent npm packages — no workspace hoisting, so each is tracked
+  # separately and an update to one cannot silently change another.
+  - package-ecosystem: npm
+    directory: /app/auth-service
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 3
+    groups:
+      dev-dependencies:
+        dependency-type: development
+
+  - package-ecosystem: npm
+    directory: /app/notes-service
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 3
+    groups:
+      dev-dependencies:
+        dependency-type: development
+
+  - package-ecosystem: npm
+    directory: /app/gateway
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: npm
+    directory: /scripts
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: npm
+    directory: /tests/api
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }
+
+  - package-ecosystem: docker
+    directories:
+      - /app/auth-service
+      - /app/notes-service
+      - /app/gateway
+      - /tests/api
+      - /scripts
+    schedule: { interval: monthly }

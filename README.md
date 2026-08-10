@@ -1,6 +1,6 @@
 # Ephemeral Kubernetes test environments
 
-[![Verify](https://github.com/AKogut/ephemeral-k8s-test-envs/actions/workflows/verify.yml/badge.svg)](https://github.com/AKogut/ephemeral-k8s-test-envs/actions/workflows/verify.yml)
+[![Ephemeral environment](https://github.com/AKogut/ephemeral-k8s-test-envs/actions/workflows/ci.yml/badge.svg)](https://github.com/AKogut/ephemeral-k8s-test-envs/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Helm](https://img.shields.io/badge/helm-v3-0f1689?logo=helm&logoColor=white)](https://helm.sh/)
 [![Node](https://img.shields.io/badge/node-22-5fa04e?logo=node.js&logoColor=white)](https://nodejs.org/)
@@ -13,9 +13,62 @@ No shared staging environment to queue for. No "it passed on staging" where
 staging was in an unknown state. No leftover namespaces quietly costing money
 after the PR is merged.
 
-> **Status: Phase 4 of 5.** Built in the open, one phase per pull request. The
-> plan is [6 epics and 42 tasks](#roadmap); this branch delivers
-> sharding: the suite split across parallel Kubernetes Jobs.
+> Built in the open across [6 epics and 42 tasks](#roadmap), one pull request per
+> phase — [#49](https://github.com/AKogut/ephemeral-k8s-test-envs/pull/49) ·
+> [#50](https://github.com/AKogut/ephemeral-k8s-test-envs/pull/50) ·
+> [#51](https://github.com/AKogut/ephemeral-k8s-test-envs/pull/51) ·
+> [#52](https://github.com/AKogut/ephemeral-k8s-test-envs/pull/52) ·
+> [#53](https://github.com/AKogut/ephemeral-k8s-test-envs/pull/53) ·
+> [#54](https://github.com/AKogut/ephemeral-k8s-test-envs/pull/54)
+
+```bash
+git clone https://github.com/AKogut/ephemeral-k8s-test-envs.git
+cd ephemeral-k8s-test-envs
+./scripts/local-demo.sh
+```
+
+That is the whole demo: a `kind` cluster, five images, a namespace, 105 tests
+across 4 parallel pods, an aggregated report, and a verified teardown. No cloud
+account, roughly three minutes.
+
+---
+
+## What actually happens
+
+```mermaid
+flowchart LR
+    PR[Pull request] --> B[Build 5 images<br/>tagged with the commit SHA]
+    B --> D[helm install<br/>namespace pr-N]
+    D --> E[gateway · auth · notes<br/>3 deployments, 4 pods]
+    D --> S[Indexed Job<br/>4 shard pods]
+    E <--> S
+    S --> V[(shared volume)]
+    V --> A[aggregator Job]
+    A --> R[one Allure report<br/>+ PR comment]
+    R --> T[teardown]
+    T --> P[verify-teardown.sh<br/>asserts nothing remains]
+```
+
+The pipeline is [one workflow](.github/workflows/ci.yml), and the ordering of its
+last four steps is the part worth reading:
+
+```yaml
+- name: Tear down the environment
+  if: always() && !inputs.keep_environment
+
+- name: Prove the environment is gone
+  if: always() && !inputs.keep_environment
+
+- name: Delete the kind cluster
+  if: always()
+
+- name: Fail the build if any test failed    # ← deliberately last
+  if: always()
+```
+
+A failing suite still gets aggregated, reported, commented on the PR and torn
+down **before** the run is allowed to go red. Failing at the point of failure
+would skip all four. → [docs/ci-pipeline.md](docs/ci-pipeline.md)
 
 ---
 
@@ -323,8 +376,8 @@ Planned as 6 epics and 42 tasks, delivered one pull request per phase.
 | 1 | [#2](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/2) | A Helm chart that stands up one isolated environment | done |
 | 2 | [#3](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/3) | The suite sharded across parallel Kubernetes Jobs | done |
 | 3 | [#4](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/4) | Per-shard results merged into one report | done |
-| 4 | [#5](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/5) | Teardown guarantees, and a step that proves them | **this PR** |
-| 5 | [#6](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/6) | The end-to-end CI pipeline, docs and wiki | planned |
+| 4 | [#5](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/5) | Teardown guarantees, and a step that proves them | done |
+| 5 | [#6](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/6) | The end-to-end CI pipeline, docs and wiki | **this PR** |
 
 Board: [Ephemeral K8s test environments](https://github.com/users/AKogut/projects/18)
 
@@ -356,6 +409,42 @@ scripts/            shard planner, result merge, in-cluster k8s client (72 unit 
                     local-demo.sh, fetch-results.sh, verify-teardown.sh
 charts/test-env/    The Helm chart — one isolated environment per release
 ```
+
+## Documentation
+
+| Document | What it covers |
+|---|---|
+| [Architecture](docs/architecture.md) | Components, request path, result storage, security posture |
+| [Sharding strategy](docs/sharding-strategy.md) | LPT bin-packing, determinism, isolation across pods |
+| [Cost and cleanup](docs/cost-and-cleanup.md) | The three teardown layers and what each one misses |
+| [CI pipeline](docs/ci-pipeline.md) | The workflow, step by step |
+| [Local development](docs/local-development.md) | Three ways to run it; full config reference |
+| [ADRs](docs/adr/) | The six decisions worth arguing about |
+
+Runbooks, an FAQ and longer-form background live in the
+[wiki](https://github.com/AKogut/ephemeral-k8s-test-envs/wiki).
+
+## What is deliberately not here
+
+Scope discipline is part of the design, so the omissions are argued rather than
+overlooked:
+
+- **No custom CRD or operator.** Jobs, a TTL and a self-destruct Job are enough;
+  an operator would be infrastructure to build and operate for no added guarantee.
+- **No JWKS.** Shared-secret HS256, because the property being demonstrated —
+  one service validating another's tokens — survives the simplification.
+  → [ADR 0003](docs/adr/0003-shared-secret-jwt.md)
+- **No Postgres.** SQLite on an `emptyDir` is a real database with nothing to
+  operate — at the cost of single-replica data services, stated rather than hidden.
+  → [ADR 0006](docs/adr/0006-single-replica-data-services.md)
+- **No cloud deployment.** The design has no provider lock-in; what changing to
+  EKS/GKE would involve is tabulated in
+  [architecture.md](docs/architecture.md#what-a-cloud-deployment-would-change).
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Security notes and the deliberate
+trade-offs are in [SECURITY.md](SECURITY.md).
 
 ## License
 

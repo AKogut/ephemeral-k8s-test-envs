@@ -1,0 +1,66 @@
+name: Publish wiki
+
+# The wiki is kept in-repo under docs/wiki/ so it is reviewed in pull requests
+# like any other file, then mirrored to the GitHub wiki on merge. Editing the
+# wiki directly in the browser is possible but the change would be overwritten by
+# the next push to main.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/wiki/**"
+      - ".github/workflows/publish-wiki.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-wiki
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Mirror docs/wiki to the GitHub wiki
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone the wiki repository
+        id: clone
+        run: |
+          # The wiki is a separate git repository. It only exists once the first
+          # page has been created, so a failure here is expected on a fresh repo
+          # and is reported rather than treated as a build failure.
+          if git clone "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git" wiki 2>/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::The wiki repository does not exist yet. Create the first page in the GitHub UI (Wiki tab), then re-run this workflow."
+          fi
+
+      - name: Sync pages
+        if: steps.clone.outputs.exists == 'true'
+        run: |
+          # Remove pages that no longer exist in docs/wiki, then copy everything
+          # across, so the wiki is a mirror rather than an append-only pile.
+          find wiki -maxdepth 1 -name '*.md' -delete
+          cp docs/wiki/*.md wiki/
+
+      - name: Commit and push
+        if: steps.clone.outputs.exists == 'true'
+        working-directory: wiki
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet && git diff --cached --quiet && [ -z "$(git status --porcelain)" ]; then
+            echo "Wiki is already up to date."
+            exit 0
+          fi
+
+          git add -A
+          git commit -m "docs: sync wiki from ${{ github.sha }}"
+          git push
+          echo "Wiki updated from ${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"

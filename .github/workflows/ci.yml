@@ -1,8 +1,13 @@
-name: Verify
+name: Ephemeral environment
 
-# Everything that does not need a cluster, so a typo fails in a minute rather
-# than after a five-minute deploy. This workflow grows with the project; the
-# full ephemeral-environment pipeline arrives in Phase 5.
+# The full lifecycle in one workflow:
+#
+#   verify (no cluster) -> build & push images -> kind cluster -> helm install
+#   -> sharded run -> aggregate -> publish -> teardown -> prove teardown happened
+#
+# Every environment is named after what created it (pr-<number> or run-<id>), and
+# every step that could leave something behind is paired with an `if: always()`
+# teardown plus an assertion that it worked.
 
 on:
   pull_request:
@@ -10,9 +15,20 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      shards:
+        description: Number of parallel test shards
+        type: number
+        default: 4
+      keep_environment:
+        description: Skip teardown for debugging (the self-destruct Job still applies)
+        type: boolean
+        default: false
 
 concurrency:
-  group: verify-${{ github.event.pull_request.number || github.ref }}
+  # A new push to the same PR replaces the previous run and, with it, the
+  # previous environment. Without this, two runs would fight over one namespace.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -20,6 +36,8 @@ permissions:
 
 env:
   NODE_VERSION: "22"
+  REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: ${{ github.repository }}
 
 jobs:
   chart:
@@ -417,3 +435,282 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down -v
+
+  # ------------------------------------------------------------------ build --
+  build:
+    name: Push ${{ matrix.component }} to GHCR
+    runs-on: ubuntu-latest
+    # Only after everything that can be checked without a cluster has passed.
+    needs: [chart, sharding, suite, scripts, code, images, runner, aggregator, stack]
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - component: auth-service
+            context: app/auth-service
+            dockerfile: app/auth-service/Dockerfile
+          - component: notes-service
+            context: app/notes-service
+            dockerfile: app/notes-service/Dockerfile
+          - component: gateway
+            context: app/gateway
+            dockerfile: app/gateway/Dockerfile
+          - component: api-tests
+            context: .
+            dockerfile: tests/api/Dockerfile
+          - component: aggregator
+            context: scripts
+            dockerfile: scripts/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve image tag
+        id: meta
+        run: |
+          # The commit SHA, never a branch name: an environment must be pinned to
+          # exactly the code that produced it, or the report describes something
+          # other than the pull request.
+          echo "tag=${{ github.event.pull_request.head.sha || github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.component }}:${{ steps.meta.outputs.tag }}
+          build-args: |
+            SERVICE_VERSION=${{ steps.meta.outputs.tag }}
+            GIT_SHA=${{ steps.meta.outputs.tag }}
+          # Scoped per component, so changing one service does not invalidate the
+          # cache for the other four.
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,scope=${{ matrix.component }},mode=max
+          provenance: false
+
+  # ------------------------------------------------- the ephemeral environment --
+  ephemeral-environment:
+    name: Deploy, test, aggregate, tear down
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+      packages: read
+      pull-requests: write
+    env:
+      IMAGE_TAG: ${{ needs.build.outputs.tag }}
+      SHARDS: ${{ inputs.shards || 4 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Name the environment
+        id: env
+        run: |
+          if [ -n "${{ github.event.pull_request.number }}" ]; then
+            name="pr-${{ github.event.pull_request.number }}"
+          else
+            name="run-${{ github.run_id }}"
+          fi
+          echo "namespace=$name" >> "$GITHUB_OUTPUT"
+          echo "release=$name"   >> "$GITHUB_OUTPUT"
+          echo "Environment: $name"
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: ephemeral-test-envs
+          wait: 120s
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull images and side-load them into kind
+        run: |
+          # Pulling once on the host and side-loading beats letting four shard
+          # pods each pull the same image from GHCR inside the cluster.
+          for component in auth-service notes-service gateway api-tests aggregator; do
+            ref="${REGISTRY}/${IMAGE_NAMESPACE}/${component}:${IMAGE_TAG}"
+            echo "::group::$component"
+            docker pull -q "$ref"
+            kind load docker-image --name ephemeral-test-envs "$ref"
+            echo "::endgroup::"
+          done
+
+      - name: Deploy the environment
+        run: |
+          helm install "${{ steps.env.outputs.release }}" ./charts/test-env \
+            --namespace "${{ steps.env.outputs.namespace }}" --create-namespace \
+            --values charts/test-env/values-ci.yaml \
+            --set "image.registry=${REGISTRY}" \
+            --set "image.namespace=${IMAGE_NAMESPACE}" \
+            --set "image.tag=${IMAGE_TAG}" \
+            --set "image.pullPolicy=Never" \
+            --set "tests.shards=${SHARDS}" \
+            --wait --timeout 6m
+
+      - name: Wait for the application to be ready
+        run: |
+          kubectl -n "${{ steps.env.outputs.namespace }}" \
+            wait --for=condition=available --timeout=5m deployment --all
+          kubectl -n "${{ steps.env.outputs.namespace }}" get pods -o wide
+
+      - name: Run the sharded suite
+        id: tests
+        continue-on-error: true
+        run: |
+          ns="${{ steps.env.outputs.namespace }}"
+          job="${{ steps.env.outputs.release }}-test-env-shards-r1"
+
+          # Wait for either outcome, so a failing suite still reaches
+          # aggregation, reporting and teardown.
+          if kubectl -n "$ns" wait --for=condition=complete --timeout=20m "job/$job"; then
+            status=0
+          else
+            status=1
+          fi
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+          for index in $(seq 0 $((SHARDS - 1))); do
+            echo "::group::shard $index"
+            kubectl -n "$ns" logs \
+              -l "batch.kubernetes.io/job-name=$job,batch.kubernetes.io/job-completion-index=$index" \
+              --tail=100 || echo "(no logs for shard $index)"
+            echo "::endgroup::"
+          done
+
+      - name: Aggregate results
+        continue-on-error: true
+        run: |
+          ns="${{ steps.env.outputs.namespace }}"
+          job="${{ steps.env.outputs.release }}-test-env-aggregate-r1"
+          kubectl -n "$ns" wait --for=condition=complete --timeout=6m "job/$job" || true
+          kubectl -n "$ns" logs "job/$job" --tail=200 || true
+
+      - name: Copy results out of the cluster
+        continue-on-error: true
+        run: |
+          ./scripts/fetch-results.sh \
+            --namespace "${{ steps.env.outputs.namespace }}" \
+            --release "${{ steps.env.outputs.release }}" \
+            --output ./results
+
+      - name: Publish the run summary
+        if: always()
+        run: |
+          if [ -f ./results/merged/summary.md ]; then
+            cat ./results/merged/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### No aggregated summary was produced" >> "$GITHUB_STEP_SUMMARY"
+            echo "The shard Job or the aggregator did not complete — see the job logs." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Generate the Allure report
+        if: always()
+        continue-on-error: true
+        run: |
+          # Rendered here rather than in-cluster: `allure generate` needs a JRE,
+          # and the runner already has one. See docs/adr/0004-*.md.
+          if [ -d ./results/merged/allure-results ]; then
+            npx --yes allure-commandline@2 generate ./results/merged/allure-results \
+              --clean -o ./results/allure-report
+          fi
+
+      - name: Upload artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ steps.env.outputs.namespace }}
+          path: |
+            results/merged/summary.json
+            results/merged/summary.md
+            results/merged/allure-results
+            results/allure-report
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Comment the summary on the pull request
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = './results/merged/summary.md';
+            const body = fs.existsSync(path)
+              ? fs.readFileSync(path, 'utf8')
+              : '### The ephemeral environment produced no test summary\nSee the workflow logs.';
+
+            const marker = '<!-- ephemeral-test-envs-summary -->';
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find((c) => c.body?.includes(marker));
+            const payload = `${marker}\n${body}`;
+
+            // Updated in place, so a PR with ten pushes has one summary, not ten.
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                comment_id: existing.id, body: payload,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: context.issue.number, body: payload,
+              });
+            }
+
+      # --------------------------------------------------------------- teardown --
+      # Everything below runs even if any step above failed or the job was
+      # cancelled. This is what makes "ephemeral" true rather than aspirational.
+
+      - name: Tear down the environment
+        if: always() && !inputs.keep_environment
+        run: |
+          ns="${{ steps.env.outputs.namespace }}"
+          # Each command tolerates the previous one failing: the verification
+          # step below is what decides whether cleanup actually worked.
+          helm uninstall "${{ steps.env.outputs.release }}" -n "$ns" --wait --timeout 3m || true
+          kubectl delete namespace "$ns" --wait=true --timeout=5m || true
+
+      - name: Prove the environment is gone
+        if: always() && !inputs.keep_environment
+        run: |
+          # Not a formality: this is the claim the whole project makes, so it is
+          # asserted rather than assumed. A leftover namespace, a cluster-scoped
+          # RBAC object or a released PersistentVolume fails the build.
+          ./scripts/verify-teardown.sh \
+            --namespace "${{ steps.env.outputs.namespace }}" \
+            --release "${{ steps.env.outputs.release }}"
+
+      - name: Delete the kind cluster
+        if: always()
+        run: kind delete cluster --name ephemeral-test-envs || true
+
+      - name: Fail the build if any test failed
+        if: always()
+        run: |
+          # Deliberately last: the report is published and the environment is
+          # destroyed before the run is allowed to go red.
+          if [ "${{ steps.tests.outputs.status }}" != "0" ]; then
+            echo "::error::The sharded test suite reported failures."
+            exit 1
+          fi
+          echo "All shards passed."
