@@ -1,0 +1,66 @@
+{{- if and .Values.tests.enabled .Values.resultsExporter.enabled }}
+{{/*
+A deliberately boring pod whose only job is to stay running with the results
+volume mounted.
+
+`kubectl cp` copies out of a *running* container, and by the time CI wants the
+merged report the aggregator Job has completed and its pod has no running
+container left. Rather than keeping the aggregator artificially alive — which
+would muddle "the merge finished" with "the results have been collected" — this
+holds the volume open and is torn down with the namespace.
+*/}}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "test-env.fullname" . }}-results-exporter
+  labels:
+    {{- include "test-env.componentLabels" (dict "context" . "component" .Values.resultsExporter.component) | nindent 4 }}
+spec:
+  restartPolicy: Always
+  serviceAccountName: {{ include "test-env.serviceAccountName" . }}
+  automountServiceAccountToken: false
+  {{- with .Values.image.pullSecrets }}
+  imagePullSecrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  securityContext:
+    {{- toYaml .Values.podSecurityContext | nindent 4 }}
+  containers:
+    - name: holder
+      image: {{ include "test-env.image" (dict "context" . "component" "aggregator") }}
+      imagePullPolicy: {{ .Values.image.pullPolicy }}
+      securityContext:
+        {{- toYaml .Values.containerSecurityContext | nindent 8 }}
+      # Reuses the aggregator image rather than pulling busybox, so an
+      # environment needs exactly four images and no unpinned third-party base.
+      command: ["node", "-e"]
+      args:
+        - |
+          const http = require('node:http');
+          // A readiness endpoint makes `kubectl wait --for=condition=ready` work,
+          // which is how CI knows the volume is mountable before copying.
+          http.createServer((_req, res) => res.end('ok')).listen(8080);
+          process.on('SIGTERM', () => process.exit(0));
+      ports:
+        - name: http
+          containerPort: 8080
+      readinessProbe:
+        httpGet:
+          path: /
+          port: http
+        periodSeconds: 5
+      resources:
+        {{- toYaml .Values.resultsExporter.resources | nindent 8 }}
+      volumeMounts:
+        - name: results
+          mountPath: /results
+        - name: tmp
+          mountPath: /tmp
+  volumes:
+    - name: results
+      persistentVolumeClaim:
+        claimName: {{ include "test-env.resultsPvcName" . }}
+    - name: tmp
+      emptyDir:
+        sizeLimit: 16Mi
+{{- end }}

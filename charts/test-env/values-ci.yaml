@@ -74,3 +74,11 @@ tests:
   results:
     size: 512Mi
     accessMode: ReadWriteOnce
+
+aggregator:
+  enabled: true
+  waitTimeoutSeconds: 1200
+  ttlSecondsAfterFinished: 600
+
+resultsExporter:
+  enabled: true

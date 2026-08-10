@@ -116,6 +116,14 @@ gets a new commit and its environment is redeployed.
 {{- printf "%s-shards-r%d" (include "test-env.fullname" .) (int .Release.Revision) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "test-env.aggregatorJobName" -}}
+{{- printf "%s-aggregate-r%d" (include "test-env.fullname" .) (int .Release.Revision) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "test-env.aggregatorServiceAccountName" -}}
+{{- printf "%s-aggregator" (include "test-env.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
 {{/* In-cluster URLs. Short DNS names would work, but the FQDN makes the
      cross-namespace behaviour explicit and survives a `search` domain change. */}}
 {{- define "test-env.authUrl" -}}
@@ -171,5 +179,8 @@ Environment variables every service shares.
 {{- end -}}
 {{- if not (has .Values.notes.authMode (list "jwt-only" "verify-with-auth-service")) -}}
 {{- fail (printf "notes.authMode must be jwt-only or verify-with-auth-service, got %q" .Values.notes.authMode) -}}
+{{- end -}}
+{{- if and .Values.aggregator.enabled (not .Values.tests.enabled) -}}
+{{- fail "aggregator.enabled requires tests.enabled: there would be no shard results to merge" -}}
 {{- end -}}
 {{- end -}}

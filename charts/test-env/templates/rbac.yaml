@@ -5,9 +5,11 @@ It has no Role and no RoleBinding, and `automountServiceAccountToken: false`.
 A reverse proxy and two CRUD services have no business holding a credential that
 can talk to the Kubernetes API, so they are not given one.
 
-Later phases add separate, narrowly-scoped accounts for the two workloads that
-genuinely do need the API — the aggregator, which reads one Job's status, and the
-teardown Job, which deletes one namespace.
+The aggregator gets its own account with exactly one permission: `get` on the one
+named shard Job it waits for. It needs neither `list` nor `watch`, because it
+polls a Job whose name it already knows.
+
+Phase 4 adds a third account for the teardown Job.
 */}}
 {{- if .Values.serviceAccount.create }}
 apiVersion: v1
@@ -21,4 +23,44 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 automountServiceAccountToken: false
+{{- end }}
+
+{{- if and .Values.tests.enabled .Values.aggregator.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "test-env.aggregatorServiceAccountName" . }}
+  labels:
+    {{- include "test-env.componentLabels" (dict "context" . "component" .Values.aggregator.component) | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "test-env.aggregatorServiceAccountName" . }}
+  labels:
+    {{- include "test-env.componentLabels" (dict "context" . "component" .Values.aggregator.component) | nindent 4 }}
+rules:
+  # `get` on one named Job is the entire permission set: wait-for-jobs polls a
+  # Job it already knows the name of, so it needs neither list nor watch.
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get"]
+    resourceNames:
+      - {{ include "test-env.shardJobName" . }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "test-env.aggregatorServiceAccountName" . }}
+  labels:
+    {{- include "test-env.componentLabels" (dict "context" . "component" .Values.aggregator.component) | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "test-env.aggregatorServiceAccountName" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "test-env.aggregatorServiceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
 {{- end }}

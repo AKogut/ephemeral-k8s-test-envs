@@ -158,8 +158,7 @@ tests:
   tolerations: []
   affinity: {}
 
-  # -- Shared volume the shards write to. The aggregator that reads it arrives in
-  # Phase 3.
+  # -- Shared volume the shards write to and the aggregator reads from.
   results:
     size: 1Gi
     # ReadWriteOnce is enough on a single-node kind cluster, where every pod
@@ -168,6 +167,39 @@ tests:
     # docs/sharding-strategy.md.
     accessMode: ReadWriteOnce
     storageClass: ""
+
+# ---------------------------------------------------------------- aggregator --
+
+aggregator:
+  enabled: true
+  component: aggregator
+  # -- Waits for the shard Job through the Kubernetes API using the pod's own
+  # service account, so no kubectl image is needed.
+  waitTimeoutSeconds: 900
+  waitIntervalSeconds: 5
+  ttlSecondsAfterFinished: 900
+  backoffLimit: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 96Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# -- Long-lived pod that mounts the results volume so CI can `kubectl cp` the
+# merged report out of the cluster. `kubectl cp` needs a running container, and
+# a completed Job's pod does not have one.
+resultsExporter:
+  enabled: true
+  component: results-exporter
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
 
 # --------------------------------------------------------------------- misc --
 

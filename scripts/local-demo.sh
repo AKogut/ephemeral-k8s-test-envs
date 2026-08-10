@@ -2,7 +2,7 @@
 #
 # One-command local environment: kind cluster -> build images -> deploy.
 #
-#   ./scripts/local-demo.sh                 # deploy, run the sharded suite, tear down
+#   ./scripts/local-demo.sh                 # deploy, shard, aggregate, tear down
 #   ./scripts/local-demo.sh --keep          # leave it running to poke at
 #   ./scripts/local-demo.sh --shards 8      # more shards
 #   ./scripts/local-demo.sh --no-tests      # just stand the environment up
@@ -21,6 +21,7 @@ RELEASE="${RELEASE:-demo}"
 IMAGE_TAG="${IMAGE_TAG:-local}"
 IMAGE_NAMESPACE="${IMAGE_NAMESPACE:-akogut/ephemeral-k8s-test-envs}"
 SHARDS="${SHARDS:-4}"
+RESULTS_DIR="${RESULTS_DIR:-$REPO_ROOT/results}"
 
 KEEP=false
 RUN_TESTS=true
@@ -139,6 +140,7 @@ IMAGE_SPECS=(
   # Build context is the repository root: the runner image needs both the suite
   # (tests/api) and the shard planner (scripts), which live in different trees.
   "api-tests:tests/api/Dockerfile:."
+  "aggregator:scripts/Dockerfile:scripts"
 )
 
 REFS=()
@@ -169,6 +171,7 @@ helm install "$RELEASE" ./charts/test-env \
   --set "image.pullPolicy=Never" \
   --set "tests.enabled=$RUN_TESTS" \
   --set "tests.shards=$SHARDS" \
+  --set "aggregator.enabled=$RUN_TESTS" \
   --wait --timeout 5m
 ok "release installed"
 
@@ -195,14 +198,27 @@ if [[ "$RUN_TESTS" == true ]]; then
     kubectl -n "$NAMESPACE" logs "$pod" --tail=20 2>/dev/null || true
   done
 
+  step "Aggregating results"
+  # The aggregator's initContainer has been waiting for the shard Job since it
+  # was created, so by now it is either finished or very nearly so.
+  kubectl -n "$NAMESPACE" wait --for=condition=complete --timeout=5m \
+    "job/${RELEASE}-test-env-aggregate-r1" 2>/dev/null || true
+  kubectl -n "$NAMESPACE" logs "job/${RELEASE}-test-env-aggregate-r1" 2>/dev/null \
+    || warn "aggregator produced no logs"
+
+  step "Copying the merged report to $RESULTS_DIR"
+  "$REPO_ROOT/scripts/fetch-results.sh" \
+    --namespace "$NAMESPACE" --release "$RELEASE" --output "$RESULTS_DIR" \
+    || warn "could not copy results out of the cluster"
+
   step "Done"
   if [[ $TEST_STATUS -eq 0 ]]; then
     ok "all $SHARDS shards passed"
   else
-    warn "some shards failed — see the logs above"
+    warn "some shards failed — see the summary above"
   fi
-  info "per-shard results are on the shared volume at /results/shard-<n>/"
-  info "merging them into one report arrives in Phase 3"
+  info "merged Allure results: $RESULTS_DIR/merged/allure-results"
+  info "render the report:     npx allure generate $RESULTS_DIR/merged/allure-results --clean -o $RESULTS_DIR/allure-report"
   exit $TEST_STATUS
 fi
 
