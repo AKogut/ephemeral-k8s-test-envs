@@ -23,6 +23,7 @@ than after a five-minute deploy.
 
 | Step | Catches |
 |---|---|
+| `npm run lint` | ESLint with type-aware rules across all five packages |
 | `npm run typecheck` | Type errors across all five packages |
 | `npm run test:unit` | 72 unit tests — sharding, aggregation, CLI parsing, Job status |
 | `shellcheck scripts/*.sh` | Shell bugs, which are otherwise found in production |
@@ -42,6 +43,23 @@ for bad in "tests.shards=0" "tests.shards=999" "notes.authMode=nope"; do
   fi
 done
 ```
+
+### Every image is scanned where it is built
+
+The three image-building jobs each run Trivy against the image they just loaded —
+no rebuild, no separate job pulling from a registry. Two passes:
+
+- **Record** — fixable `HIGH` and `CRITICAL` into GitHub code scanning, one
+  category per image. Never fails the build; it is the trend line.
+- **Gate** — fixable `CRITICAL` only, `exit-code: 1`.
+
+The gate is narrower than the record on purpose. A build that goes red because a
+new advisory landed in an untouched base image trains people to merge past a red
+check, which costs more than the advisory. `--ignore-unfixed` follows the same
+logic: a vulnerability with no available fix is information, not a decision.
+
+See [SECURITY.md](../SECURITY.md#vulnerability-scanning) for what the first run
+found and what was changed because of it.
 
 ## Job 2 — `build`
 

@@ -10,7 +10,7 @@
 # for better-sqlite3 all stay in the build stage; see the size table in
 # docs/architecture.md for the measured difference.
 
-ARG NODE_VERSION=22.22.0
+ARG NODE_VERSION=22.23.2
 
 # ---------------------------------------------------------------- deps --------
 FROM node:${NODE_VERSION}-bookworm-slim AS deps
@@ -61,6 +61,14 @@ ENV NODE_ENV=production \
 COPY --from=deps  --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist         ./dist
 COPY --chown=node:node package.json ./
+
+# Nothing in this image runs a package manager — the entrypoint is `node`, and
+# node_modules arrives prebuilt from the deps stage. npm vendors its own copy of
+# node-tar, which every image scan reports and which nothing here can act on, so
+# dropping npm takes a recurring class of finding off the report and a package
+# manager out of a production container at the same time.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 
 # The database directory is a mount point; owning it as `node` means the
 # container works whether or not a volume is attached.

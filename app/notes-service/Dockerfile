@@ -5,7 +5,7 @@
 # compiled in a throwaway stage, and only dist/ plus production node_modules
 # reach the runtime image.
 
-ARG NODE_VERSION=22.22.0
+ARG NODE_VERSION=22.23.2
 
 # ---------------------------------------------------------------- deps --------
 FROM node:${NODE_VERSION}-bookworm-slim AS deps
@@ -54,6 +54,11 @@ ENV NODE_ENV=production \
 COPY --from=deps  --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist         ./dist
 COPY --chown=node:node package.json ./
+
+# The entrypoint is `node`; no package manager runs here. Dropping npm removes
+# its vendored node-tar, which is otherwise a permanent fixture of every scan.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 
 RUN mkdir -p /data && chown node:node /data
 VOLUME ["/data"]
