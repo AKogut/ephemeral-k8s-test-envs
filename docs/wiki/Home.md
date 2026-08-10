@@ -17,12 +17,12 @@ background, the runbooks and the questions the design invites live.
 
 | If you want to… | Go to |
 |---|---|
-| Run it in five minutes | [Getting started](Getting-Started) |
+| Run it in five minutes | [Getting started](Getting-Started.md) |
 | Understand how it fits together | [`docs/architecture.md`](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/docs/architecture.md) |
 | Understand the sharding | [`docs/sharding-strategy.md`](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/docs/sharding-strategy.md) |
 | Know how cleanup is guaranteed | [`docs/cost-and-cleanup.md`](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/docs/cost-and-cleanup.md) |
-| Fix something that is broken | [Runbook](Runbook) |
-| Ask "why did you do it that way?" | [FAQ](FAQ) and the [ADRs](Design-Decisions) |
+| Fix something that is broken | [Runbook](Runbook.md) |
+| Ask "why did you do it that way?" | [FAQ](FAQ.md) and the [ADRs](Design-Decisions.md) |
 
 ## The problem
 

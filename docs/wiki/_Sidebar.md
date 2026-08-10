@@ -1,8 +1,8 @@
 ### Ephemeral K8s test environments
 
 **Start here**
-- [Home](Home)
-- [Getting started](Getting-Started)
+- [Home](Home.md)
+- [Getting started](Getting-Started.md)
 
 **Reference**
 - [Architecture](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/docs/architecture.md)
@@ -12,11 +12,11 @@
 - [Local development](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/docs/local-development.md)
 
 **Rationale**
-- [Design decisions](Design-Decisions)
-- [FAQ](FAQ)
+- [Design decisions](Design-Decisions.md)
+- [FAQ](FAQ.md)
 
 **Operations**
-- [Runbook](Runbook)
+- [Runbook](Runbook.md)
 
 ---
 - [Repository](https://github.com/AKogut/ephemeral-k8s-test-envs)

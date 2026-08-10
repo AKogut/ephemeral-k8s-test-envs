@@ -51,6 +51,35 @@ jobs:
           find wiki -maxdepth 1 -name '*.md' -delete
           cp docs/wiki/*.md wiki/
 
+          # The two renderers disagree about how a page is addressed. In the
+          # repository, docs/wiki/ is browsed as ordinary files, so a link has to
+          # be `Runbook.md` to resolve. The wiki serves pages without the
+          # extension, where `Runbook.md` is a 404.
+          #
+          # The files are written the repository's way — that is the copy people
+          # review in a pull request — and the extension is stripped on the way
+          # in. Only bare page names are touched: anything with a slash, a dot in
+          # the middle or a scheme is left alone.
+          sed -i -E 's@\]\(([A-Za-z0-9_-]+)\.md\)@](\1)@g' wiki/*.md
+
+      - name: Every link points at a page that exists
+        if: steps.clone.outputs.exists == 'true'
+        run: |
+          # A link to a page that was renamed or never written renders as plain
+          # text in the wiki, silently. This is the check that would have caught
+          # it.
+          broken=0
+          for page in docs/wiki/*.md; do
+            while read -r target; do
+              [ -z "$target" ] && continue
+              if [ ! -f "docs/wiki/$target" ]; then
+                echo "::error file=$page::links to $target, which does not exist"
+                broken=1
+              fi
+            done <<< "$(grep -oE '\]\([A-Za-z0-9_-]+\.md\)' "$page" | sed -E 's@\]\((.*)\)@\1@')"
+          done
+          [ "$broken" = "0" ] && echo "every internal wiki link resolves"
+
       - name: Every page is reachable from the sidebar
         if: steps.clone.outputs.exists == 'true'
         run: |
@@ -59,7 +88,7 @@ jobs:
           for page in docs/wiki/*.md; do
             name=$(basename "$page" .md)
             case "$name" in _*) continue ;; esac
-            if ! grep -q "($name)" docs/wiki/_Sidebar.md; then
+            if ! grep -q "($name.md)" docs/wiki/_Sidebar.md; then
               echo "::error::$name is not linked from _Sidebar.md"
               missing=1
             fi
