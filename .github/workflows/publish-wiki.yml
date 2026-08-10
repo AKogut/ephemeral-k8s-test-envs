@@ -45,8 +45,26 @@ jobs:
         run: |
           # Remove pages that no longer exist in docs/wiki, then copy everything
           # across, so the wiki is a mirror rather than an append-only pile.
+          # _Sidebar.md and _Footer.md are tracked in docs/wiki too, so they
+          # survive the delete — a sidebar that only exists in the wiki would be
+          # silently removed by the first sync after it was hand-written.
           find wiki -maxdepth 1 -name '*.md' -delete
           cp docs/wiki/*.md wiki/
+
+      - name: Every page is reachable from the sidebar
+        if: steps.clone.outputs.exists == 'true'
+        run: |
+          # A wiki page nobody links to is a page nobody reads.
+          missing=0
+          for page in docs/wiki/*.md; do
+            name=$(basename "$page" .md)
+            case "$name" in _*) continue ;; esac
+            if ! grep -q "($name)" docs/wiki/_Sidebar.md; then
+              echo "::error::$name is not linked from _Sidebar.md"
+              missing=1
+            fi
+          done
+          [ "$missing" = "0" ] && echo "all pages linked from the sidebar"
 
       - name: Commit and push
         if: steps.clone.outputs.exists == 'true'
