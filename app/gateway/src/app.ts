@@ -109,7 +109,8 @@ export function createApp(config: Config, logger: Logger): Express {
     });
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // The fourth parameter is what makes Express treat this as an error handler,
+  // so it stays even though nothing calls it.
   app.use((error: unknown, req: Request, res: Response, _next: NextFunction) => {
     const parseError = error as { type?: string };
     if (parseError?.type === 'entity.too.large') {

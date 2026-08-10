@@ -56,10 +56,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error('JWT_SECRET must be set when NODE_ENV=production');
   }
 
-  const authMode = (env.AUTH_MODE ?? 'jwt-only') as AuthMode;
-  if (authMode !== 'jwt-only' && authMode !== 'verify-with-auth-service') {
-    throw new Error(`AUTH_MODE must be "jwt-only" or "verify-with-auth-service", received "${authMode}"`);
+  // Validated before it is typed, not after. Asserting `as AuthMode` first told
+  // the compiler the value was already one of the two, which narrowed it to
+  // `never` inside the guard below — so the error message would have been
+  // checked against a type that claimed the error could not happen.
+  const requestedAuthMode = env.AUTH_MODE ?? 'jwt-only';
+  if (requestedAuthMode !== 'jwt-only' && requestedAuthMode !== 'verify-with-auth-service') {
+    throw new Error(
+      `AUTH_MODE must be "jwt-only" or "verify-with-auth-service", received "${requestedAuthMode}"`,
+    );
   }
+  const authMode: AuthMode = requestedAuthMode;
 
   const logLevel = (env.LOG_LEVEL ?? 'info') as Config['logLevel'];
 

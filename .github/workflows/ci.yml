@@ -174,6 +174,27 @@ jobs:
       - name: Build
         run: npm run build
 
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          # The rules are type-aware, so every package has to be installed:
+          # without its node_modules a package's imports resolve to `any` and
+          # the interesting rules silently pass.
+          npm ci
+          npm run ci:install
+
+      - name: ESLint
+        run: npm run lint
+
   images:
     name: Build ${{ matrix.component }} image
     runs-on: ubuntu-latest

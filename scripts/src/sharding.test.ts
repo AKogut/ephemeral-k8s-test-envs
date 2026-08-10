@@ -219,7 +219,7 @@ describe('applyWeights', () => {
   });
 
   it('ignores invalid weight entries instead of trusting them', () => {
-    const weighted = applyWeights(['a.spec.ts'], { 'a.spec.ts': -5 } as Record<string, number>);
+    const weighted = applyWeights(['a.spec.ts'], { 'a.spec.ts': -5 });
     assert.equal(weighted[0]!.weight, DEFAULT_WEIGHT);
   });
 });

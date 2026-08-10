@@ -273,6 +273,8 @@ docs/               architecture · sharding · cost-and-cleanup · ci-pipeline 
 
 npm run test:unit                    # 72 unit tests, no cluster needed
 npm run shard:plan                   # print the plan the pods will compute
+npm run lint                         # ESLint, type-aware, all five packages
+npm run typecheck                    # tsc across all five packages
 npm run helm:lint                    # lint the chart with both value sets
 
 npm run compose:up                   # the app under docker compose
