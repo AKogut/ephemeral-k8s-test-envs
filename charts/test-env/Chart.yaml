@@ -1,0 +1,27 @@
+apiVersion: v2
+name: test-env
+description: An ephemeral, per-pull-request test environment — three services, a sharded API suite and its own teardown.
+type: application
+
+# version    – the chart's own version, bumped when templates change.
+# appVersion – the default image tag, overridden per environment with --set image.tag=<sha>.
+version: 1.0.0
+appVersion: "1.0.0"
+
+keywords:
+  - ephemeral-environments
+  - preview-environments
+  - testing
+  - sharding
+  - ci
+
+home: https://github.com/AKogut/ephemeral-k8s-test-envs
+sources:
+  - https://github.com/AKogut/ephemeral-k8s-test-envs
+
+maintainers:
+  - name: AKogut
+    url: https://github.com/AKogut
+
+annotations:
+  category: Testing

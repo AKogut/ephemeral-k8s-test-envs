@@ -1,6 +1,6 @@
 {
   "name": "ephemeral-k8s-test-envs",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Per-pull-request ephemeral test environments on Kubernetes.",
   "license": "MIT",
@@ -17,6 +17,11 @@
     "build": "npm --prefix app/auth-service run build && npm --prefix app/notes-service run build && npm --prefix app/gateway run build",
     "typecheck": "npm --prefix app/auth-service run typecheck && npm --prefix app/notes-service run typecheck && npm --prefix app/gateway run typecheck",
     "compose:up": "docker compose up --build -d",
-    "compose:down": "docker compose down -v"
+    "compose:down": "docker compose down -v",
+    "helm:lint": "helm lint charts/test-env && helm lint charts/test-env -f charts/test-env/values-ci.yaml",
+    "helm:template": "helm template preview charts/test-env --namespace preview -f charts/test-env/values-ci.yaml",
+    "demo": "./scripts/local-demo.sh",
+    "demo:keep": "./scripts/local-demo.sh --keep",
+    "demo:cleanup": "./scripts/local-demo.sh --cleanup-only"
   }
 }

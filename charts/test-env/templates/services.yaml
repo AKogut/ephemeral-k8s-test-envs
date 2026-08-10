@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "test-env.authServiceName" . }}
+  labels:
+    {{- include "test-env.componentLabels" (dict "context" . "component" .Values.auth.component) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.auth.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.auth.component) | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "test-env.notesServiceName" . }}
+  labels:
+    {{- include "test-env.componentLabels" (dict "context" . "component" .Values.notes.component) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.notes.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.notes.component) | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "test-env.gatewayServiceName" . }}
+  labels:
+    {{- include "test-env.componentLabels" (dict "context" . "component" .Values.gateway.component) | nindent 4 }}
+spec:
+  type: {{ .Values.gateway.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.gateway.service.port }}
+      targetPort: http
+      protocol: TCP
+      {{- if and (eq .Values.gateway.service.type "NodePort") .Values.gateway.service.nodePort }}
+      nodePort: {{ .Values.gateway.service.nodePort }}
+      {{- end }}
+  selector:
+    {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.gateway.component) | nindent 4 }}

@@ -1,0 +1,29 @@
+
+  {{ .Chart.Name }} {{ .Chart.Version }} — ephemeral environment "{{ include "test-env.envId" . }}"
+
+  Namespace : {{ .Release.Namespace }}
+  Release   : {{ .Release.Name }} (revision {{ .Release.Revision }})
+  Image tag : {{ include "test-env.imageTag" . }}
+
+  Services
+    gateway        {{ include "test-env.gatewayUrl" . }}   ({{ .Values.gateway.replicaCount }} replica{{ if gt (int .Values.gateway.replicaCount) 1 }}s{{ end }})
+    auth-service   {{ include "test-env.authUrl" . }}
+    notes-service  {{ include "test-env.notesUrl" . }}   (auth mode: {{ .Values.notes.authMode }})
+
+  Check it is up:
+    kubectl -n {{ .Release.Namespace }} get pods
+    kubectl -n {{ .Release.Namespace }} wait --for=condition=available --timeout=5m deployment --all
+
+  Reach it from your machine:
+    kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "test-env.gatewayServiceName" . }} 8080:{{ .Values.gateway.service.port }}
+    curl http://localhost:8080/readyz
+
+  Everything belonging to this environment:
+    kubectl get all -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+  Tear it down — both of these, in this order:
+    helm uninstall {{ .Release.Name }} -n {{ .Release.Namespace }}
+    kubectl delete namespace {{ .Release.Namespace }}
+
+  Nothing removes this namespace automatically yet. A guaranteed teardown, and a
+  step that proves it happened, arrive in Phase 4.

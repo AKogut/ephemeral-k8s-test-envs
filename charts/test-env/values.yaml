@@ -1,0 +1,151 @@
+# Default values for the test-env chart.
+#
+# The chart installs into whatever namespace Helm is pointed at:
+#
+#   helm install pr-123 ./charts/test-env \
+#     --namespace pr-123 --create-namespace \
+#     --set image.tag=$GITHUB_SHA
+#
+# The namespace is not templated as a resource on purpose — see
+# docs/adr/0001-namespace-per-environment.md.
+
+# -- Identifier echoed by every service on `x-env-id`. Defaults to the release
+# namespace, which is what makes a running pod traceable back to the PR that
+# created it.
+envId: ""
+
+nameOverride: ""
+fullnameOverride: ""
+
+# -- Labels added to every object the chart creates.
+commonLabels: {}
+commonAnnotations: {}
+
+image:
+  registry: ghcr.io
+  # -- Owner/repo prefix. Images are <registry>/<namespace>/<component>:<tag>.
+  namespace: akogut/ephemeral-k8s-test-envs
+  # -- Defaults to .Chart.AppVersion. In CI this is the commit SHA, which is what
+  # guarantees a PR environment runs that PR's code and nothing else.
+  tag: ""
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+# -- Signing key shared by auth-service (issuer) and notes-service (verifier).
+# Left empty, the chart generates a random key per release and keeps it stable
+# across upgrades. Never set a real secret through --set in CI; use a
+# pre-existing Secret via existingSecret instead.
+jwt:
+  secret: ""
+  existingSecret: ""
+  existingSecretKey: jwt-secret
+  issuer: ephemeral-test-envs/auth-service
+  audience: ephemeral-test-envs
+  ttlSeconds: 3600
+
+# ------------------------------------------------------------------ services --
+
+auth:
+  replicaCount: 1
+  component: auth-service
+  port: 3001
+  # -- log2 of the scrypt cost. 14 is the production figure; 12 keeps a test
+  # suite from spending most of its time hashing throwaway passwords.
+  scryptCostLog2: 12
+  logLevel: info
+  resources:
+    requests:
+      cpu: 50m
+      memory: 96Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  # -- SQLite lives on an emptyDir: the data is as ephemeral as the environment,
+  # and a PVC would only add a scheduling constraint.
+  storage:
+    sizeLimit: 256Mi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+notes:
+  replicaCount: 1
+  component: notes-service
+  port: 3002
+  # -- jwt-only | verify-with-auth-service
+  # The default makes notes-service call auth-service over cluster DNS on the
+  # first use of each token, so the deployment exercises a real service-to-service
+  # hop rather than two unrelated pods in one namespace.
+  authMode: verify-with-auth-service
+  authVerifyTimeoutMs: 2000
+  authCacheTtlMs: 5000
+  maxPageSize: 100
+  logLevel: info
+  resources:
+    requests:
+      cpu: 50m
+      memory: 96Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  storage:
+    sizeLimit: 256Mi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+gateway:
+  # -- The only stateless service, so it is the one that demonstrates replicas.
+  # auth and notes stay at 1 because they own node-local SQLite files; see
+  # docs/adr/0006-single-replica-data-services.md.
+  replicaCount: 2
+  component: gateway
+  port: 3000
+  proxyTimeoutMs: 10000
+  readinessTimeoutMs: 2000
+  logLevel: info
+  service:
+    type: ClusterIP
+    port: 80
+    nodePort: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 192Mi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# --------------------------------------------------------------------- misc --
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# -- Applied to every pod in the chart.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+podAnnotations: {}
+
+# -- A default-deny NetworkPolicy plus the specific flows this stack needs.
+# Off by default because kind ships without a policy-enforcing CNI, so enabling
+# it there would give a false sense of security rather than actual isolation.
+networkPolicy:
+  enabled: false

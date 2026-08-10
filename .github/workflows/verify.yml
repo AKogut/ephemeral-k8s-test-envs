@@ -22,6 +22,50 @@ env:
   NODE_VERSION: "22"
 
 jobs:
+  chart:
+    name: Helm chart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+
+      - name: Lint with both value sets
+        run: |
+          helm lint charts/test-env
+          helm lint charts/test-env -f charts/test-env/values-ci.yaml
+
+      - name: Render
+        run: |
+          helm template ci charts/test-env --namespace ci \
+            -f charts/test-env/values-ci.yaml --set image.tag=deadbeef > /tmp/rendered.yaml
+          grep '^kind:' /tmp/rendered.yaml | sort | uniq -c
+
+      - name: Reject invalid values
+        run: |
+          # Testing that a chart renders is easy. Testing that it *refuses* to
+          # render nonsense is what catches a guard that quietly stopped guarding.
+          for bad in "notes.authMode=nope" "notes.authMode="; do
+            if helm template ci charts/test-env --set "$bad" >/dev/null 2>&1; then
+              echo "::error::chart accepted invalid value: $bad"
+              exit 1
+            fi
+            echo "correctly rejected: $bad"
+          done
+
+      - name: Security defaults are actually applied
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 scripts/assert-security-defaults.py /tmp/rendered.yaml
+
+  scripts:
+    name: Shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck scripts/*.sh
+
   code:
     name: Typecheck and build
     runs-on: ubuntu-latest

@@ -1,0 +1,114 @@
+{{- include "test-env.validate" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "test-env.authServiceName" . }}
+  labels:
+    {{- include "test-env.componentLabels" (dict "context" . "component" .Values.auth.component) | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.auth.replicaCount }}
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.auth.component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "test-env.componentLabels" (dict "context" . "component" .Values.auth.component) | nindent 8 }}
+      annotations:
+        # Rolls the pods when the signing key changes, so auth-service and
+        # notes-service never end up on different secrets.
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "test-env.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      # The suite runs immediately after rollout, so a slow drain would show up
+      # as connection resets in the report rather than as a graceful shutdown.
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: auth-service
+          image: {{ include "test-env.image" (dict "context" . "component" "auth-service") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.auth.port }}
+              protocol: TCP
+          env:
+            {{- include "test-env.commonEnv" . | nindent 12 }}
+            - name: SERVICE_NAME
+              value: auth-service
+            - name: PORT
+              value: {{ .Values.auth.port | quote }}
+            - name: DATABASE_PATH
+              value: /data/auth.sqlite
+            - name: JWT_TTL_SECONDS
+              value: {{ .Values.jwt.ttlSeconds | quote }}
+            - name: SCRYPT_COST_LOG2
+              value: {{ .Values.auth.scryptCostLog2 | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.auth.logLevel | quote }}
+          # Startup probe first, so a slow cold start never trips the liveness
+          # probe into a restart loop.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.auth.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            # readOnlyRootFilesystem is on, so anything the runtime writes needs
+            # an explicit volume.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          emptyDir:
+            sizeLimit: {{ .Values.auth.storage.sizeLimit }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 32Mi
+      {{- with .Values.auth.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.auth.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.auth.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,132 @@
+{{- if .Values.networkPolicy.enabled }}
+{{/*
+Default-deny plus the three flows this stack actually needs:
+
+    anything in-namespace  -> gateway
+    gateway                -> auth, notes
+    notes                  -> auth            (token verification)
+    everything             -> kube-dns
+
+Disabled by default because kind's default CNI does not enforce NetworkPolicy —
+applying these there would produce YAML that looks like isolation while
+enforcing nothing, which is worse than not claiming it. Enable it on a cluster
+running Calico or Cilium.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "test-env.fullname" . }}-default-deny
+  labels:
+    {{- include "test-env.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "test-env.fullname" . }}-allow-dns
+  labels:
+    {{- include "test-env.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "test-env.fullname" . }}-gateway
+  labels:
+    {{- include "test-env.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.gateway.component) | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.gateway.port }}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.auth.component) | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.auth.port }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.notes.component) | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.notes.port }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "test-env.fullname" . }}-auth
+  labels:
+    {{- include "test-env.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.auth.component) | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.gateway.component) | nindent 14 }}
+        - podSelector:
+            matchLabels:
+              {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.notes.component) | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.auth.port }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "test-env.fullname" . }}-notes
+  labels:
+    {{- include "test-env.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.notes.component) | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.gateway.component) | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.notes.port }}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.auth.component) | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.auth.port }}
+{{- end }}
