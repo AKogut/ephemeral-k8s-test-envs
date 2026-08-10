@@ -100,8 +100,27 @@ jobs:
       - name: Typecheck
         run: npm --prefix scripts run typecheck
 
-      - name: Unit tests
-        run: npm run test:unit
+      - name: Unit tests with coverage
+        run: |
+          # `tee` would swallow a failing exit status without this.
+          set -o pipefail
+
+          # The thresholds are gates, not decoration: they sit at what the suite
+          # already achieves, so the only way past them is to add the test with
+          # the code. Functions are pinned at 100 because a new exported
+          # function nobody called is the failure worth catching.
+          npm run test:coverage 2>&1 | tee /tmp/coverage.txt
+
+      - name: Publish the coverage table
+        if: always()
+        run: |
+          {
+            echo '### Unit test coverage'
+            echo '```'
+            sed -n '/start of coverage report/,/end of coverage report/p' /tmp/coverage.txt \
+              | sed 's/^# \{0,1\}//'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Show the plan the shard pods will compute
         run: npm run shard:plan

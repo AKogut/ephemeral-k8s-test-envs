@@ -9,7 +9,7 @@ be, and pull requests are welcome.
 npm install              # the linter, at the root
 npm run install:all      # dependencies for all five packages
 npm run build            # compile the three services and the scripts
-npm run test:unit        # 72 unit tests, no cluster required
+npm run test:unit        # 90 unit tests, no cluster required
 ```
 
 Both installs are needed before linting: the rules are type-aware, so ESLint
@@ -31,10 +31,14 @@ run this and a full configuration reference.
 ```bash
 npm run lint             # ESLint, type-aware, all five packages
 npm run typecheck        # all five packages
-npm run test:unit
+npm run test:coverage    # the unit tests, with the thresholds CI enforces
 npm run helm:lint        # if the chart changed
 shellcheck scripts/*.sh  # if a shell script changed
 ```
+
+`test:coverage` is the one CI runs. The thresholds sit at what the suite already
+achieves — 99% lines, 94% branches, **100% functions** — so adding a function
+without a test fails the build rather than quietly lowering the number.
 
 `npm run lint:fix` applies what can be fixed mechanically. Disable comments are
 allowed where a rule is genuinely wrong about this code, but they must carry a

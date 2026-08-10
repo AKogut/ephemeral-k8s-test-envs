@@ -262,7 +262,7 @@ app/
   notes-service/    Notes CRUD — per-owner scoping, upstream token verification
   gateway/          Reverse proxy — hand-rolled on fetch, zero proxy dependencies
 tests/api/          105 Playwright API tests + the shard entrypoint
-scripts/            shard planner · result merge · in-cluster k8s client (72 unit tests)
+scripts/            shard planner · result merge · in-cluster k8s client (90 unit tests)
                     local-demo.sh · fetch-results.sh · verify-teardown.sh
 charts/test-env/    The Helm chart — one isolated environment per release
 docs/               architecture · sharding · cost-and-cleanup · ci-pipeline · 6 ADRs
@@ -277,7 +277,7 @@ docs/               architecture · sharding · cost-and-cleanup · ci-pipeline 
 ./scripts/local-demo.sh --shards 8   # …with 8 shards
 ./scripts/local-demo.sh --no-tests   # just the environment
 
-npm run test:unit                    # 72 unit tests, no cluster needed
+npm run test:unit                    # 90 unit tests, no cluster needed
 npm run shard:plan                   # print the plan the pods will compute
 npm run lint                         # ESLint, type-aware, all five packages
 npm run typecheck                    # tsc across all five packages
