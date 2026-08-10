@@ -13,9 +13,82 @@ No shared staging environment to queue for. No "it passed on staging" where
 staging was in an unknown state. No leftover namespaces quietly costing money
 after the PR is merged.
 
-> **Status: Phase 2 of 5.** Built in the open, one phase per pull request. The
+> **Status: Phase 3 of 5.** Built in the open, one phase per pull request. The
 > plan is [6 epics and 42 tasks](#roadmap); this branch delivers
 > sharding: the suite split across parallel Kubernetes Jobs.
+
+---
+
+## Phase 3 — N result directories become one report
+
+```
+## ✅ All tests passed
+
+**Environment:** `demo-local`   **Shards:** `4`
+
+| Total | Passed | Failed | Broken | Skipped | Flaky | Retries |
+|------:|-------:|-------:|-------:|--------:|------:|--------:|
+| 105   | 105    | 0      | 0      | 0       | 0     | 0       |
+
+### Sharding
+Ran on 4 parallel shard(s).
+Sequential cost would have been 9.2s; the run took 2.8s
+— a 3.27× speedup (81.6% shard efficiency).
+
+| Shard | Tests | Passed | Failed | Duration |
+|------:|------:|-------:|-------:|---------:|
+| 0     | 13    | 13     | 0      | 1.6s     |
+| 1     | 31    | 31     | 0      | 2.1s     |
+| 2     | 27    | 27     | 0      | 2.6s     |
+| 3     | 34    | 34     | 0      | 2.8s     |
+```
+
+### Ordering two Jobs when Kubernetes has no edge between them
+
+Kubernetes cannot express "run this Job after that one". The aggregator's
+**initContainer** expresses it instead: the pod starts immediately and refuses to
+finish starting until the shard Job reaches a terminal state.
+
+It waits for **terminal, not for success** — a run where two shards failed still
+has results worth merging, and the failure belongs in the report rather than in a
+stuck pipeline.
+
+The wait polls the `batch/v1` API with the pod's own service account rather than
+shelling out to a `kubectl` image — one less image to pull, pin and patch, for
+what is two REST calls. TLS verification comes from pointing
+`NODE_EXTRA_CA_CERTS` at the service account CA bundle, so no custom HTTPS agent
+is needed.
+
+Its RBAC is the entire permission set:
+
+```yaml
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get"]           # not list, not watch
+    resourceNames: [<the one shard Job>]
+```
+
+### Retries are collapsed, not counted
+
+Playwright writes one Allure result per *attempt*, so a test retried twice
+appears three times. Counting raw files would inflate the totals and report a
+suite as failing when the retry passed. Attempts are collapsed by history id, the
+final attempt decides the status, and a test that failed and then passed is
+reported as **flaky** rather than as either.
+
+### The aggregator does not render the HTML
+
+`allure generate` is a Java application. Adding a JRE would roughly triple the
+image to produce HTML that immediately leaves the cluster. The merge, the summary
+and the verdict happen in-cluster — readable with `kubectl logs`, no tooling —
+and rendering happens where the report is published.
+→ [ADR 0004](docs/adr/0004-aggregate-in-cluster-render-in-ci.md)
+
+The aggregator image has **no production dependencies at all**; CI asserts that,
+asserts the merge collapses retries correctly against files on disk, and asserts
+that a missing shard directory **fails** aggregation rather than reporting a green
+run over three quarters of the suite.
 
 ---
 
@@ -184,6 +257,7 @@ for `better-sqlite3` all stay in the discarded stages.
 | `gateway` | 1.67 GB | **351 MB** | **79%** |
 | `notes-service` | — | 378 MB | |
 | `api-tests` | — | 404 MB | |
+| `aggregator` | — | 346 MB | |
 
 <sub>Uncompressed image size as reported by `docker images`, measured rather than
 estimated. Both columns use the same measurement, so the comparison is
@@ -199,8 +273,8 @@ Planned as 6 epics and 42 tasks, delivered one pull request per phase.
 |---|---|---|---|
 | 0 | [#1](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/1) | Three containerised services | done |
 | 1 | [#2](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/2) | A Helm chart that stands up one isolated environment | done |
-| 2 | [#3](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/3) | The suite sharded across parallel Kubernetes Jobs | **this PR** |
-| 3 | [#4](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/4) | Per-shard results merged into one report | planned |
+| 2 | [#3](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/3) | The suite sharded across parallel Kubernetes Jobs | done |
+| 3 | [#4](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/4) | Per-shard results merged into one report | **this PR** |
 | 4 | [#5](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/5) | Teardown guarantees, and a step that proves them | planned |
 | 5 | [#6](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/6) | The end-to-end CI pipeline, docs and wiki | planned |
 
@@ -210,9 +284,9 @@ Board: [Ephemeral K8s test environments](https://github.com/users/AKogut/project
 
 ```bash
 npm run install:all      # dependencies for all five packages
-npm run demo             # kind cluster → build → deploy → 4 sharded pods → clean up
+npm run demo             # kind → build → deploy → 4 shards → aggregate → clean up
 npm run demo:shards      # …with 8 shards
-npm run test:unit        # 46 unit tests for the shard planner, no cluster needed
+npm run test:unit        # 72 unit tests, no cluster needed
 npm run shard:plan       # print the plan the pods will compute
 npm run demo:keep        # …but leave the environment running
 npm run demo:cleanup     # remove a previous run's leftovers
@@ -230,7 +304,8 @@ app/
   notes-service/    Notes CRUD — per-owner scoping, upstream token verification
   gateway/          Reverse proxy — hand-rolled on fetch, zero proxy dependencies
 tests/api/          105 Playwright API tests + the shard entrypoint
-scripts/            shard-tests planner (+46 unit tests), local-demo.sh
+scripts/            shard planner, result merge, in-cluster k8s client (72 unit tests)
+                    local-demo.sh, fetch-results.sh
 charts/test-env/    The Helm chart — one isolated environment per release
 ```
 

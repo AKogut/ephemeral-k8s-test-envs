@@ -277,6 +277,92 @@ jobs:
           fi
           echo "confirmed: no browser binaries in the image"
 
+  aggregator:
+    name: Build the aggregator image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: scripts
+          file: scripts/Dockerfile
+          push: false
+          load: true
+          tags: aggregator:ci
+          cache-from: type=gha,scope=aggregator
+          cache-to: type=gha,scope=aggregator,mode=max
+
+      - name: Report image size
+        run: |
+          size=$(docker image inspect aggregator:ci --format '{{.Size}}')
+          printf '| `aggregator` | %s MB |\n' "$((size / 1000000))" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: It has no production dependencies
+        run: |
+          # The merge is plain Node. If a dependency ever appears here, the
+          # "no production dependencies" claim in the docs has gone stale.
+          if docker run --rm --entrypoint sh aggregator:ci -c 'ls node_modules 2>/dev/null | grep .'; then
+            echo "::error::aggregator image has production dependencies"
+            exit 1
+          fi
+          echo "confirmed: no production dependencies"
+
+      - name: All three entrypoints respond
+        run: |
+          for entry in aggregate-results wait-for-jobs; do
+            docker run --rm --entrypoint node aggregator:ci "dist/$entry.js" --help | head -3
+          done
+
+      - name: It merges a synthetic sharded run correctly
+        run: |
+          # An end-to-end check of the merge logic against files on disk,
+          # including the retry collapsing the unit tests cover in isolation.
+          mkdir -p /tmp/results/shard-0/allure-results /tmp/results/shard-1/allure-results
+          cat > /tmp/results/shard-0/allure-results/a-result.json <<'JSON'
+          {"uuid":"a","historyId":"h1","name":"passes","fullName":"suite > passes","status":"passed","start":0,"stop":1000}
+          JSON
+          cat > /tmp/results/shard-1/allure-results/b-result.json <<'JSON'
+          {"uuid":"b","historyId":"h2","name":"flaky","fullName":"suite > flaky","status":"failed","start":0,"stop":500}
+          JSON
+          cat > /tmp/results/shard-1/allure-results/c-result.json <<'JSON'
+          {"uuid":"c","historyId":"h2","name":"flaky","fullName":"suite > flaky","status":"passed","start":500,"stop":1000}
+          JSON
+
+          # The image runs as uid 1000 and the runner writes as 1001, so the
+          # bind mount needs handing over. In a cluster this is the PVC's
+          # fsGroup instead.
+          sudo chown -R 1000:1000 /tmp/results
+
+          docker run --rm -v /tmp/results:/results aggregator:ci \
+            --input /results --env-id ci-synthetic --expect-shards 2
+
+          sudo chmod -R a+r /tmp/results/merged
+          python3 - <<'PY_INNER'
+          import json
+          s = json.load(open('/tmp/results/merged/summary.json'))
+          assert s['totals']['tests'] == 2, f"expected 2 tests, got {s['totals']}"
+          assert s['totals']['passed'] == 2, s['totals']
+          assert s['totals']['flaky'] == 1, f"retry should be reported as flaky: {s['totals']}"
+          assert s['totals']['retries'] == 1, s['totals']
+          assert s['passed'] is True
+          print('merge, retry collapsing and flaky detection all correct')
+          PY_INNER
+
+      - name: A missing shard directory fails aggregation
+        run: |
+          # Reporting a green run over a partial suite would be worse than failing.
+          sudo rm -rf /tmp/results/merged
+          if docker run --rm -v /tmp/results:/results aggregator:ci \
+               --input /results --env-id ci --expect-shards 4; then
+            echo "::error::aggregator accepted a run with missing shards"
+            exit 1
+          fi
+          echo "correctly refused to aggregate an incomplete run"
+
   stack:
     name: docker compose stack
     runs-on: ubuntu-latest

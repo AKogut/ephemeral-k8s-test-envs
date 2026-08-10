@@ -1,0 +1,98 @@
+{{- if and .Values.tests.enabled .Values.aggregator.enabled }}
+{{/*
+Aggregator Job.
+
+Kubernetes has no "run after that Job" edge between Jobs, so the ordering is
+expressed as an initContainer that refuses to finish until the shard Job has
+reached a terminal state. It polls the batch API with the pod's own service
+account rather than shelling out to kubectl, which keeps this to a single image.
+
+It waits for terminal state, not for success: a run where two shards failed
+still has results worth merging, and the failure belongs in the report rather
+than in a stuck pipeline.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "test-env.aggregatorJobName" . }}
+  labels:
+    {{- include "test-env.componentLabels" (dict "context" . "component" .Values.aggregator.component) | nindent 4 }}
+spec:
+  backoffLimit: {{ .Values.aggregator.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.aggregator.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "test-env.componentLabels" (dict "context" . "component" .Values.aggregator.component) | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "test-env.aggregatorServiceAccountName" . }}
+      # This is the one workload that legitimately needs a cluster token.
+      automountServiceAccountToken: true
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      initContainers:
+        - name: wait-for-shards
+          image: {{ include "test-env.image" (dict "context" . "component" "aggregator") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["node", "dist/wait-for-jobs.js"]
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          env:
+            - name: WAIT_FOR_JOB
+              value: {{ include "test-env.shardJobName" . }}
+            - name: WAIT_TIMEOUT_SECONDS
+              value: {{ .Values.aggregator.waitTimeoutSeconds | quote }}
+            - name: WAIT_INTERVAL_SECONDS
+              value: {{ .Values.aggregator.waitIntervalSeconds | quote }}
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            # Verifies the API server certificate against the service account CA
+            # without needing a custom HTTPS agent in the client.
+            - name: NODE_EXTRA_CA_CERTS
+              value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          resources:
+            {{- toYaml .Values.aggregator.resources | nindent 12 }}
+      containers:
+        - name: aggregate
+          image: {{ include "test-env.image" (dict "context" . "component" "aggregator") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          args:
+            - --input
+            - /results
+            - --env-id
+            - {{ include "test-env.envId" . | quote }}
+            # Fails loudly if a shard never produced a directory, rather than
+            # quietly reporting a green run over three quarters of the suite.
+            - --expect-shards
+            - {{ .Values.tests.shards | quote }}
+          env:
+            - name: GIT_SHA
+              value: {{ include "test-env.imageTag" . | quote }}
+            - name: IMAGE_TAG
+              value: {{ include "test-env.imageTag" . | quote }}
+            - name: ENV_ID
+              value: {{ include "test-env.envId" . | quote }}
+          resources:
+            {{- toYaml .Values.aggregator.resources | nindent 12 }}
+          volumeMounts:
+            - name: results
+              mountPath: /results
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: results
+          persistentVolumeClaim:
+            claimName: {{ include "test-env.resultsPvcName" . }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 32Mi
+{{- end }}
