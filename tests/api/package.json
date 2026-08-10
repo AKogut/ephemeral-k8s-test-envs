@@ -1,0 +1,23 @@
+{
+  "name": "api-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Black-box API suite executed against an ephemeral environment, sharded across Kubernetes Jobs.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "playwright test",
+    "test:shard": "node ./run-shard.mjs",
+    "typecheck": "tsc --noEmit",
+    "report": "allure generate allure-results --clean -o allure-report && allure open allure-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^22.18.8",
+    "allure-playwright": "^3.4.2",
+    "typescript": "^5.9.3"
+  }
+}

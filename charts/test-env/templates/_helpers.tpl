@@ -103,6 +103,21 @@ Usage: {{ include "test-env.image" (dict "context" . "component" "gateway") }}
 {{- define "test-env.secretKey" -}}
 {{- if .Values.jwt.existingSecret -}}{{ .Values.jwt.existingSecretKey }}{{- else -}}jwt-secret{{- end -}}
 {{- end -}}
+{{- define "test-env.resultsPvcName" -}}{{ include "test-env.fullname" . }}-results{{- end -}}
+
+{{/*
+Job names carry the release revision.
+
+A Job's spec is immutable, so a fixed name would make `helm upgrade` fail on the
+second deploy to the same namespace — which is exactly what happens when a PR
+gets a new commit and its environment is redeployed.
+*/}}
+{{- define "test-env.shardJobName" -}}
+{{- printf "%s-shards-r%d" (include "test-env.fullname" .) (int .Release.Revision) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{/* In-cluster URLs. Short DNS names would work, but the FQDN makes the
+     cross-namespace behaviour explicit and survives a `search` domain change. */}}
 {{- define "test-env.authUrl" -}}
 {{- printf "http://%s.%s.svc.cluster.local:%d" (include "test-env.authServiceName" .) .Release.Namespace (int .Values.auth.port) -}}
 {{- end -}}
@@ -148,6 +163,12 @@ Environment variables every service shares.
 
 {{/* Validation that fails the render rather than the rollout. */}}
 {{- define "test-env.validate" -}}
+{{- if lt (int .Values.tests.shards) 1 -}}
+{{- fail (printf "tests.shards must be at least 1, got %v" .Values.tests.shards) -}}
+{{- end -}}
+{{- if gt (int .Values.tests.shards) 64 -}}
+{{- fail (printf "tests.shards is capped at 64 to avoid accidentally requesting a huge Job, got %v" .Values.tests.shards) -}}
+{{- end -}}
 {{- if not (has .Values.notes.authMode (list "jwt-only" "verify-with-auth-service")) -}}
 {{- fail (printf "notes.authMode must be jwt-only or verify-with-auth-service, got %q" .Values.notes.authMode) -}}
 {{- end -}}

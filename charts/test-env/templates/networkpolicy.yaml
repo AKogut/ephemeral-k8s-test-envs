@@ -96,6 +96,9 @@ spec:
         - podSelector:
             matchLabels:
               {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.notes.component) | nindent 14 }}
+        - podSelector:
+            matchLabels:
+              {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.tests.component) | nindent 14 }}
       ports:
         - protocol: TCP
           port: {{ .Values.auth.port }}
@@ -118,6 +121,9 @@ spec:
         - podSelector:
             matchLabels:
               {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.gateway.component) | nindent 14 }}
+        - podSelector:
+            matchLabels:
+              {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.tests.component) | nindent 14 }}
       ports:
         - protocol: TCP
           port: {{ .Values.notes.port }}

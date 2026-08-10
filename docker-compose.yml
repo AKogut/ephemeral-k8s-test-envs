@@ -5,6 +5,7 @@
 # few seconds without a cluster. The Kubernetes path is scripts/local-demo.sh.
 #
 #   docker compose up --build          -> gateway on http://localhost:3000
+#   docker compose run --rm api-tests  -> run the API suite against the stack
 
 name: ephemeral-test-envs
 
@@ -89,6 +90,25 @@ services:
       retries: 10
       start_period: 5s
 
+  # Opt-in: `docker compose run --rm api-tests`. Runs the whole suite as a
+  # single shard, which is the fast feedback loop while writing tests.
+  api-tests:
+    profiles: ["test"]
+    build:
+      context: .
+      dockerfile: tests/api/Dockerfile
+    environment:
+      BASE_URL: http://gateway:3000
+      AUTH_URL: http://auth-service:3001
+      NOTES_URL: http://notes-service:3002
+      SHARD_INDEX: "0"
+      SHARD_TOTAL: "1"
+      ENV_ID: docker-compose
+    depends_on:
+      gateway:
+        condition: service_healthy
+    volumes:
+      - ./results:/results
 
 volumes:
   auth-data:

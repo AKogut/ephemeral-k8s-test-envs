@@ -1,6 +1,6 @@
 {
   "name": "ephemeral-k8s-test-envs",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Per-pull-request ephemeral test environments on Kubernetes.",
   "license": "MIT",
@@ -13,15 +13,21 @@
     "node": ">=22"
   },
   "scripts": {
-    "install:all": "npm --prefix app/auth-service install && npm --prefix app/notes-service install && npm --prefix app/gateway install",
-    "build": "npm --prefix app/auth-service run build && npm --prefix app/notes-service run build && npm --prefix app/gateway run build",
-    "typecheck": "npm --prefix app/auth-service run typecheck && npm --prefix app/notes-service run typecheck && npm --prefix app/gateway run typecheck",
+    "install:all": "npm --prefix app/auth-service install && npm --prefix app/notes-service install && npm --prefix app/gateway install && npm --prefix scripts install && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm --prefix tests/api install",
+    "build": "npm --prefix app/auth-service run build && npm --prefix app/notes-service run build && npm --prefix app/gateway run build && npm --prefix scripts run build",
+    "typecheck": "npm --prefix app/auth-service run typecheck && npm --prefix app/notes-service run typecheck && npm --prefix app/gateway run typecheck && npm --prefix scripts run typecheck && npm --prefix tests/api run typecheck",
     "compose:up": "docker compose up --build -d",
     "compose:down": "docker compose down -v",
     "helm:lint": "helm lint charts/test-env && helm lint charts/test-env -f charts/test-env/values-ci.yaml",
     "helm:template": "helm template preview charts/test-env --namespace preview -f charts/test-env/values-ci.yaml",
     "demo": "./scripts/local-demo.sh",
     "demo:keep": "./scripts/local-demo.sh --keep",
-    "demo:cleanup": "./scripts/local-demo.sh --cleanup-only"
+    "demo:cleanup": "./scripts/local-demo.sh --cleanup-only",
+    "test:unit": "npm --prefix scripts test",
+    "test:api": "npm --prefix tests/api test",
+    "shard:plan": "npm --prefix scripts run shard -- --dir ../tests/api/specs --weights ../tests/api/test-weights.json --total 4 --format plan",
+    "demo:shards": "./scripts/local-demo.sh --shards 8",
+    "compose:test": "docker compose --profile test run --rm api-tests",
+    "ci:install": "npm --prefix app/auth-service ci && npm --prefix app/notes-service ci && npm --prefix app/gateway ci && npm --prefix scripts ci && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm --prefix tests/api ci"
   }
 }

@@ -1,0 +1,19 @@
+# Root build context is used by tests/api/Dockerfile and the aggregator image.
+node_modules
+**/node_modules
+**/dist
+**/.data
+**/data
+**/*.sqlite*
+**/allure-results
+**/allure-report
+**/playwright-report
+**/test-results
+results
+.git
+.github
+docs
+charts
+*.md
+.env*
+.DS_Store

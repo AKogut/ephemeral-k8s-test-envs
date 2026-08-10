@@ -2,8 +2,10 @@
 #
 # One-command local environment: kind cluster -> build images -> deploy.
 #
-#   ./scripts/local-demo.sh                 # stand it up, then tear it down
+#   ./scripts/local-demo.sh                 # deploy, run the sharded suite, tear down
 #   ./scripts/local-demo.sh --keep          # leave it running to poke at
+#   ./scripts/local-demo.sh --shards 8      # more shards
+#   ./scripts/local-demo.sh --no-tests      # just stand the environment up
 #   ./scripts/local-demo.sh --cleanup-only  # remove a previous run's leftovers
 #
 # Requires: docker, kind, kubectl, helm. Nothing else, and no cloud account.
@@ -18,8 +20,10 @@ NAMESPACE="${NAMESPACE:-demo-local}"
 RELEASE="${RELEASE:-demo}"
 IMAGE_TAG="${IMAGE_TAG:-local}"
 IMAGE_NAMESPACE="${IMAGE_NAMESPACE:-akogut/ephemeral-k8s-test-envs}"
+SHARDS="${SHARDS:-4}"
 
 KEEP=false
+RUN_TESTS=true
 CLEANUP_ONLY=false
 KEEP_CLUSTER=false
 
@@ -33,7 +37,7 @@ warn()  { printf '    %s!%s %s\n' "$YELLOW" "$RESET" "$*"; }
 die()   { printf '\n%serror:%s %s\n' "$RED" "$RESET" "$*" >&2; exit 1; }
 
 usage() {
-  sed -n '2,11p' "${BASH_SOURCE[0]}" | sed 's/^#\{1,2\} \{0,1\}//'
+  sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^#\{1,2\} \{0,1\}//'
   exit 0
 }
 
@@ -49,6 +53,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --keep)         KEEP=true; shift ;;
     --keep-cluster) KEEP=true; KEEP_CLUSTER=true; shift ;;
+    --no-tests)     RUN_TESTS=false; KEEP=true; shift ;;
+    --shards)       SHARDS="${2:?--shards needs a value}"; shift 2 ;;
     --cleanup-only) CLEANUP_ONLY=true; shift ;;
     --namespace)    NAMESPACE="${2:?--namespace needs a value}"; shift 2 ;;
     --tag)          IMAGE_TAG="${2:?--tag needs a value}"; shift 2 ;;
@@ -130,6 +136,9 @@ IMAGE_SPECS=(
   "auth-service:app/auth-service/Dockerfile:app/auth-service"
   "notes-service:app/notes-service/Dockerfile:app/notes-service"
   "gateway:app/gateway/Dockerfile:app/gateway"
+  # Build context is the repository root: the runner image needs both the suite
+  # (tests/api) and the shard planner (scripts), which live in different trees.
+  "api-tests:tests/api/Dockerfile:."
 )
 
 REFS=()
@@ -158,6 +167,8 @@ helm install "$RELEASE" ./charts/test-env \
   --set "image.namespace=$IMAGE_NAMESPACE" \
   --set "image.tag=$IMAGE_TAG" \
   --set "image.pullPolicy=Never" \
+  --set "tests.enabled=$RUN_TESTS" \
+  --set "tests.shards=$SHARDS" \
   --wait --timeout 5m
 ok "release installed"
 
@@ -165,6 +176,35 @@ step "Waiting for the application to become ready"
 kubectl -n "$NAMESPACE" wait --for=condition=available --timeout=5m deployment --all
 ok "all deployments available"
 kubectl -n "$NAMESPACE" get pods -o wide
+
+if [[ "$RUN_TESTS" == true ]]; then
+  SHARD_JOB="${RELEASE}-test-env-shards-r1"
+
+  step "Running $SHARDS test shards"
+  info "watch: kubectl -n $NAMESPACE get pods -l app.kubernetes.io/component=api-tests -w"
+  TEST_STATUS=0
+  kubectl -n "$NAMESPACE" wait --for=condition=complete --timeout=15m "job/$SHARD_JOB" 2>/dev/null \
+    || TEST_STATUS=1
+
+  for index in $(seq 0 $((SHARDS - 1))); do
+    pod=$(kubectl -n "$NAMESPACE" get pods \
+      -l "batch.kubernetes.io/job-name=$SHARD_JOB,batch.kubernetes.io/job-completion-index=$index" \
+      -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+    [[ -n "$pod" ]] || continue
+    printf '\n%s--- shard %s (%s) ---%s\n' "$DIM" "$index" "$pod" "$RESET"
+    kubectl -n "$NAMESPACE" logs "$pod" --tail=20 2>/dev/null || true
+  done
+
+  step "Done"
+  if [[ $TEST_STATUS -eq 0 ]]; then
+    ok "all $SHARDS shards passed"
+  else
+    warn "some shards failed — see the logs above"
+  fi
+  info "per-shard results are on the shared volume at /results/shard-<n>/"
+  info "merging them into one report arrives in Phase 3"
+  exit $TEST_STATUS
+fi
 
 step "Smoke-testing the environment from inside the cluster"
 # Executed inside a running pod so the check goes through the same Service DNS
@@ -204,5 +244,5 @@ kubectl -n "$NAMESPACE" exec "deploy/${RELEASE}-test-env-gateway" -- node -e "
 ok "register → login → create note succeeded through the gateway"
 
 step "Done"
-ok "environment '$NAMESPACE' is up"
+ok "environment '$NAMESPACE' is up (tests skipped)"
 info "port-forward: kubectl -n $NAMESPACE port-forward svc/${RELEASE}-test-env-gateway 8080:80"

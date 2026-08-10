@@ -41,11 +41,20 @@ jobs:
             -f charts/test-env/values-ci.yaml --set image.tag=deadbeef > /tmp/rendered.yaml
           grep '^kind:' /tmp/rendered.yaml | sort | uniq -c
 
+      - name: Renders at every supported shard count
+        run: |
+          for shards in 1 2 4 8 16; do
+            echo "::group::shards=$shards"
+            helm template ci charts/test-env --namespace ci --set tests.shards=$shards \
+              | grep -E 'completionMode|completions:|parallelism:'
+            echo "::endgroup::"
+          done
+
       - name: Reject invalid values
         run: |
           # Testing that a chart renders is easy. Testing that it *refuses* to
           # render nonsense is what catches a guard that quietly stopped guarding.
-          for bad in "notes.authMode=nope" "notes.authMode="; do
+          for bad in "tests.shards=0" "tests.shards=999" "notes.authMode=nope" "notes.authMode="; do
             if helm template ci charts/test-env --set "$bad" >/dev/null 2>&1; then
               echo "::error::chart accepted invalid value: $bad"
               exit 1
@@ -57,6 +66,66 @@ jobs:
         run: |
           python3 -m pip install --quiet pyyaml
           python3 scripts/assert-security-defaults.py /tmp/rendered.yaml
+
+  sharding:
+    name: Shard planner
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install
+        run: npm --prefix scripts ci
+
+      - name: Typecheck
+        run: npm --prefix scripts run typecheck
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Show the plan the shard pods will compute
+        run: npm run shard:plan
+
+      - name: The plan covers every spec file exactly once
+        run: |
+          # The planner's own unit tests assert this on synthetic input. This
+          # asserts it on the real suite, which is what actually ships.
+          total=4
+          expected=$(find tests/api/specs -name '*.spec.ts' | wc -l | tr -d ' ')
+          assigned=0
+          all=""
+          for i in $(seq 0 $((total - 1))); do
+            files=$(npm --prefix scripts run --silent shard -- \
+              --dir ../tests/api/specs --weights ../tests/api/test-weights.json \
+              --index "$i" --total "$total" --format files)
+            count=$(printf '%s' "$files" | grep -c . || true)
+            echo "shard $i: $count file(s)"
+            assigned=$((assigned + count))
+            all="$all$files"$'\n'
+          done
+          unique=$(printf '%s' "$all" | grep -c . || true)
+          distinct=$(printf '%s' "$all" | grep . | sort -u | wc -l | tr -d ' ')
+          echo "expected=$expected assigned=$assigned distinct=$distinct"
+          if [ "$assigned" != "$expected" ] || [ "$distinct" != "$expected" ]; then
+            echo "::error::shard plan does not cover every spec file exactly once"
+            exit 1
+          fi
+
+  suite:
+    name: API suite typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install
+        run: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm --prefix tests/api ci
+      - name: Typecheck
+        run: npm --prefix tests/api run typecheck
 
   scripts:
     name: Shell scripts
@@ -78,9 +147,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm --prefix app/auth-service ci
-          npm --prefix app/notes-service ci
-          npm --prefix app/gateway ci
+          # All five packages: `npm run typecheck` at the root spans every one of
+          # them, so installing only the services would fail on missing @types.
+          npm run ci:install
 
       - name: Typecheck
         run: npm run typecheck
@@ -148,6 +217,65 @@ jobs:
             echo "::error::${{ matrix.component }} did not shut down cleanly (exit $exit_code)"
             exit 1
           fi
+
+  runner:
+    name: Build the test runner image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          # Build context is the repository root: the runner needs both the
+          # suite (tests/api) and the shard planner (scripts).
+          context: .
+          file: tests/api/Dockerfile
+          push: false
+          load: true
+          tags: api-tests:ci
+          cache-from: type=gha,scope=api-tests
+          cache-to: type=gha,scope=api-tests,mode=max
+
+      - name: Report image size
+        run: |
+          # Note: `docker image inspect .Size` reports the uncompressed size on a
+          # standard Docker engine, but the content size when the containerd
+          # image store is enabled (as on recent Docker Desktop). Both are
+          # printed so the number in the docs is never ambiguous about which it
+          # is, and the guard below is set well above either reading.
+          size=$(docker image inspect api-tests:ci --format '{{.Size}}')
+          docker images api-tests --format '{{.Repository}}:{{.Tag}} {{.Size}}'
+          printf '| `api-tests` | %s MB |\n' "$((size / 1000000))" >> "$GITHUB_STEP_SUMMARY"
+
+          # A browser-bearing Playwright base adds well over a gigabyte. This
+          # guard is what stops that creeping back in unnoticed — see ADR 0002.
+          if [ "$size" -gt 700000000 ]; then
+            echo "::error::api-tests image is $((size / 1000000)) MB — browsers may have crept back in"
+            exit 1
+          fi
+
+      - name: The shard planner works inside the image
+        run: |
+          # The planner is compiled into the image as a plain JS CLI, so this
+          # also proves the runtime needs neither TypeScript nor tsx.
+          for i in 0 1 2 3; do
+            files=$(docker run --rm --entrypoint node api-tests:ci \
+              /opt/sharder/shard-tests.js --dir specs --total 4 --index "$i" --format files)
+            count=$(printf '%s' "$files" | grep -c . || true)
+            echo "shard $i -> $count file(s)"
+            [ "$count" -gt 0 ] || { echo "::error::shard $i got no files"; exit 1; }
+          done
+
+      - name: No browsers are installed
+        run: |
+          if docker run --rm --entrypoint sh api-tests:ci -c 'ls ~/.cache/ms-playwright 2>/dev/null | grep .'; then
+            echo "::error::browser binaries found in the runner image"
+            exit 1
+          fi
+          echo "confirmed: no browser binaries in the image"
 
   stack:
     name: docker compose stack

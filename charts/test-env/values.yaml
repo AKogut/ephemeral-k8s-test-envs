@@ -119,6 +119,56 @@ gateway:
   tolerations: []
   affinity: {}
 
+# --------------------------------------------------------------------- tests --
+
+tests:
+  # -- Set to false to stand up the environment without running anything, which
+  # is what `local-demo.sh --no-tests` does before handing over a port-forward.
+  enabled: true
+  component: api-tests
+
+  # -- Number of parallel shard pods. Each pod derives its own slice from
+  # JOB_COMPLETION_INDEX; nothing is coordinated at runtime.
+  shards: 4
+  # -- Playwright workers *inside* each pod. Total concurrency is shards × workers.
+  workers: 2
+  retries: 1
+
+  # -- 0 means a failing shard is a failing shard: no pod-level retry masking a
+  # real failure. Flakiness is handled by Playwright's own `retries` instead,
+  # which records the retry in the report.
+  backoffLimit: 0
+  # -- Finished shard pods clean themselves up even if nothing else does. This is
+  # pod hygiene, not environment cleanup — that arrives in Phase 4.
+  ttlSecondsAfterFinished: 900
+  activeDeadlineSeconds: 1800
+
+  readyTimeoutMs: 180000
+  testTimeoutMs: 30000
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 192Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  # -- Shared volume the shards write to. The aggregator that reads it arrives in
+  # Phase 3.
+  results:
+    size: 1Gi
+    # ReadWriteOnce is enough on a single-node kind cluster, where every pod
+    # lands on the same node. On a multi-node cluster set this to
+    # ReadWriteMany with a storage class that supports it — see
+    # docs/sharding-strategy.md.
+    accessMode: ReadWriteOnce
+    storageClass: ""
+
 # --------------------------------------------------------------------- misc --
 
 serviceAccount:

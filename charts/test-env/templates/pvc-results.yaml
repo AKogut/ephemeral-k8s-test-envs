@@ -1,0 +1,30 @@
+{{- if .Values.tests.enabled }}
+{{/*
+Shared volume for test results.
+
+Every shard writes to /results/shard-<index>/, the aggregator reads all of them
+and writes /results/merged/. ReadWriteOnce is sufficient on a single-node
+cluster (kind, minikube), where all pods land on the same node. On a multi-node
+cluster this must be ReadWriteMany — see docs/architecture.md#result-storage for
+the trade-off and the MinIO alternative.
+*/}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "test-env.resultsPvcName" . }}
+  labels:
+    {{- include "test-env.labels" . | nindent 4 }}
+  annotations:
+    # Keep the results around long enough for CI to copy them out even if the
+    # release is uninstalled first; the namespace deletion removes them anyway.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - {{ .Values.tests.results.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.tests.results.size }}
+  {{- if .Values.tests.results.storageClass }}
+  storageClassName: {{ .Values.tests.results.storageClass | quote }}
+  {{- end }}
+{{- end }}
