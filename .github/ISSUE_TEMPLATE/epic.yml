@@ -1,0 +1,53 @@
+name: Epic
+description: A phase of work that groups several tasks
+title: "[Epic] "
+labels: ["epic"]
+body:
+  - type: markdown
+    attributes:
+      value: An epic is a coherent slice of the project. It should be closable — when its tasks are done, something works end to end that did not before.
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What is true when this epic is done that is not true now?
+      placeholder: A single `helm install` stands up a complete, isolated environment in its own namespace.
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: In scope
+      description: The tasks this epic covers. Link them once they exist.
+    validations:
+      required: true
+
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: What deliberately belongs to a different epic. This is where scope creep gets caught.
+
+  - type: textarea
+    id: done
+    attributes:
+      label: Definition of done
+      description: Observable outcomes, not activities. "helm lint passes in CI", not "wrote the chart".
+    validations:
+      required: true
+
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Phase
+      options:
+        - "Phase 0 — Application"
+        - "Phase 1 — Helm chart"
+        - "Phase 2 — Sharding"
+        - "Phase 3 — Aggregation"
+        - "Phase 4 — Teardown"
+        - "Phase 5 — CI and documentation"
+    validations:
+      required: true

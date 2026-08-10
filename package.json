@@ -1,6 +1,6 @@
 {
   "name": "ephemeral-k8s-test-envs",
-  "version": "0.5.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Per-pull-request ephemeral test environments on Kubernetes.",
   "license": "MIT",

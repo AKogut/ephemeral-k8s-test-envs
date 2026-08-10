@@ -1,0 +1,47 @@
+name: Task
+description: A single unit of work belonging to an epic
+title: "[Task] "
+labels: ["task"]
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why this is needed. Assume the reader has not been following along.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Checklist of observable outcomes. Each item should be something someone else could verify.
+      value: |
+        - [ ]
+        - [ ]
+        - [ ] Covered by a test or an explicit note saying why not
+    validations:
+      required: true
+
+  - type: input
+    id: epic
+    attributes:
+      label: Parent epic
+      placeholder: "#1"
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Implementation notes
+      description: Files likely to change, decisions already made, traps to avoid.
+
+  - type: dropdown
+    id: size
+    attributes:
+      label: Size
+      options:
+        - "S — under half a day"
+        - "M — about a day"
+        - "L — more than a day, consider splitting"
+    validations:
+      required: true
