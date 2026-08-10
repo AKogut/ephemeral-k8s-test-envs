@@ -12,7 +12,7 @@
 # around 250 MB, which is worth real seconds when four shard pods pull it at
 # once on a cold node. See docs/adr/0002-browserless-test-runner-image.md.
 
-ARG NODE_VERSION=22.22.0
+ARG NODE_VERSION=22.23.2
 
 # ------------------------------------------------------------- sharder --------
 # The shard planner is compiled once and copied in as a plain JS CLI, so the
@@ -65,6 +65,13 @@ COPY --from=deps    --chown=node:node /app/node_modules ./node_modules
 COPY --chown=node:node tests/api/package.json tests/api/playwright.config.ts tests/api/run-shard.mjs tests/api/test-weights.json ./
 COPY --chown=node:node tests/api/fixtures ./fixtures
 COPY --chown=node:node tests/api/specs    ./specs
+
+# `run-shard.mjs` falls back to `npx` for the planner and for Playwright, but
+# only when the compiled CLI or the local binary is missing — which is the
+# developer-checkout case, not this image. Both are baked in above, so npm is
+# unreachable here and only contributes its vendored node-tar to every scan.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 
 # The results volume is mounted here; owning it up front means the container
 # works as a non-root user against a fresh PersistentVolume.

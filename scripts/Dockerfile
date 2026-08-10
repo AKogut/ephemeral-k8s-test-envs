@@ -7,7 +7,7 @@
 # It has no production dependencies at all — the merge is plain Node — so the
 # runtime stage carries nothing but compiled JavaScript on a slim base.
 
-ARG NODE_VERSION=22.22.0
+ARG NODE_VERSION=22.23.2
 
 # --------------------------------------------------------------- build --------
 FROM node:${NODE_VERSION}-bookworm-slim AS build
@@ -40,6 +40,12 @@ ENV NODE_ENV=production \
     GIT_SHA=${GIT_SHA}
 
 COPY --from=build --chown=node:node /build/dist ./dist
+
+# The entrypoint is `node` and this image has no dependencies at all, so npm is
+# pure attack surface. Dropping it also removes its vendored node-tar, which
+# would otherwise be the only thing an image scan ever found here.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 
 RUN mkdir -p /results && chown -R node:node /results /app
 USER node

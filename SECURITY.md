@@ -50,6 +50,41 @@ These are defaults worth copying:
   for anyone supplying their own.
 - **Images pinned to a digest-stable tag** and built from a slim base, with the
   build toolchain confined to discarded stages.
+- **No package manager in any runtime image.** Every entrypoint is `node`;
+  `node_modules` arrives prebuilt from an earlier stage. npm and corepack are
+  deleted from the final layer, which removes npm's vendored copy of `node-tar`
+  along with them.
+
+## Vulnerability scanning
+
+Every image is scanned with Trivy on every pull request, in the job that builds
+it. Two passes, and the difference between them is the policy:
+
+| Pass | Severity | Fails the build | Where it goes |
+|---|---|---|---|
+| Record | `HIGH`, `CRITICAL`, fixable only | no | GitHub code scanning, one category per image |
+| Gate | `CRITICAL`, fixable only | **yes** | the job log |
+
+Gating on `HIGH` would turn the pipeline red on a Tuesday because an advisory
+landed in a base image nobody touched, and a check that breaks on its own teaches
+people to merge past it. `--ignore-unfixed` is the same argument from the other
+side: a vulnerability with no available fix is information, not a decision anyone
+can act on in this repository.
+
+The first run of this scan was not decorative. It found five fixable criticals in
+every image — two in `libgnutls30` from a stale base tag, three in the `node-tar`
+that npm vendors. Both are fixed:
+
+| | Fixable CRITICAL | HIGH | MEDIUM | LOW |
+|---|---|---|---|---|
+| Before | 5 | 35 | 40 | 9 |
+| Base image moved to Node 22.23.2 | 1 | 7 | 8 | 0 |
+| npm removed from the runtime layer | **0** | **0** | **0** | **0** |
+
+Removing npm does not make the images smaller — the files come from the base
+layer and a later `rm` only writes a whiteout. What changes is the filesystem the
+container actually runs with, which is what the scanner reads and what anyone
+inside the container would find.
 
 ## Application-level behaviour the suite locks in
 

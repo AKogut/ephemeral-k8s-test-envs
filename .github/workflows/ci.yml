@@ -198,6 +198,9 @@ jobs:
   images:
     name: Build ${{ matrix.component }} image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # to publish the vulnerability scan
     strategy:
       fail-fast: false
       matrix:
@@ -222,6 +225,43 @@ jobs:
         run: |
           size=$(docker image inspect ${{ matrix.component }}:ci --format '{{.Size}}')
           printf '| `%s` | %s MB |\n' "${{ matrix.component }}" "$((size / 1000000))" >> "$GITHUB_STEP_SUMMARY"
+
+      # Two passes over the image that was just built, and the difference between
+      # them is the whole policy.
+      #
+      # The first records every fixable HIGH and CRITICAL into code scanning. It
+      # never fails the build — it is the trend line, visible whether or not
+      # anything is blocking today.
+      #
+      # The second is the gate, and it is deliberately narrower: fixable
+      # CRITICAL only. Gating on HIGH means the pipeline goes red on a Tuesday
+      # because an advisory landed in a base image nobody touched, and a check
+      # that breaks on its own teaches people to merge past it. `ignore-unfixed`
+      # is the same argument from the other side: a vulnerability with no
+      # available fix is information, not a decision anyone can act on here.
+      - name: Record what is fixable in this image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ matrix.component }}:ci
+          format: sarif
+          output: trivy-${{ matrix.component }}.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+
+      - name: Publish it to code scanning
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-${{ matrix.component }}.sarif
+          category: trivy-${{ matrix.component }}
+
+      - name: Fail on a fixable critical vulnerability
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ matrix.component }}:ci
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
 
       - name: Container starts, serves and shuts down cleanly
         run: |
@@ -259,6 +299,9 @@ jobs:
   runner:
     name: Build the test runner image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # to publish the vulnerability scan
     steps:
       - uses: actions/checkout@v7
 
@@ -295,6 +338,32 @@ jobs:
             exit 1
           fi
 
+      # Same policy as the service images: record everything fixable, gate only
+      # on fixable CRITICAL.
+      - name: Record what is fixable in this image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: api-tests:ci
+          format: sarif
+          output: trivy-api-tests.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+
+      - name: Publish it to code scanning
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-api-tests.sarif
+          category: trivy-api-tests
+
+      - name: Fail on a fixable critical vulnerability
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: api-tests:ci
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
       - name: The shard planner works inside the image
         run: |
           # The planner is compiled into the image as a plain JS CLI, so this
@@ -318,6 +387,9 @@ jobs:
   aggregator:
     name: Build the aggregator image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # to publish the vulnerability scan
     steps:
       - uses: actions/checkout@v7
 
@@ -338,6 +410,33 @@ jobs:
         run: |
           size=$(docker image inspect aggregator:ci --format '{{.Size}}')
           printf '| `aggregator` | %s MB |\n' "$((size / 1000000))" >> "$GITHUB_STEP_SUMMARY"
+
+      # Same policy as the service images: record everything fixable, gate only
+      # on fixable CRITICAL. This one carries no production dependencies at all,
+      # so anything found here comes from the base image.
+      - name: Record what is fixable in this image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: aggregator:ci
+          format: sarif
+          output: trivy-aggregator.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+
+      - name: Publish it to code scanning
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-aggregator.sarif
+          category: trivy-aggregator
+
+      - name: Fail on a fixable critical vulnerability
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: aggregator:ci
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
 
       - name: It has no production dependencies
         run: |

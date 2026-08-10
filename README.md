@@ -187,6 +187,12 @@ native toolchain for `better-sqlite3` all stay in the discarded stages.
 <sub>Uncompressed image size as reported by <code>docker images</code>. Both
 columns use the same measurement, so the comparison is like-for-like.</sub>
 
+None of the runtime images carries a package manager — every entrypoint is
+`node`, so npm and corepack are deleted from the final layer. That does not save
+a byte (the files live in the base layer; a later `rm` only writes a whiteout)
+but it is what takes the last fixable critical out of every scan, because npm
+vendors its own copy of `node-tar`.
+
 The test runner deserves its own note. The documented base for a Playwright suite
 is `mcr.microsoft.com/playwright` — **923 MB compressed**, because it ships
 Chromium, Firefox and WebKit. This suite never opens a browser; it speaks HTTP
