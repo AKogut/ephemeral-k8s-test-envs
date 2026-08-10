@@ -16,7 +16,7 @@
     "shard": "node --import tsx src/shard-tests.ts"
   },
   "devDependencies": {
-    "@types/node": "^22.18.8",
+    "@types/node": "^26.1.2",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   }
