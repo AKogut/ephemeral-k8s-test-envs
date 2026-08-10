@@ -147,9 +147,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm --prefix app/auth-service ci
-          npm --prefix app/notes-service ci
-          npm --prefix app/gateway ci
+          # All five packages: `npm run typecheck` at the root spans every one of
+          # them, so installing only the services would fail on missing @types.
+          npm run ci:install
 
       - name: Typecheck
         run: npm run typecheck

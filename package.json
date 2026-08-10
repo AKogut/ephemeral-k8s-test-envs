@@ -27,6 +27,7 @@
     "test:api": "npm --prefix tests/api test",
     "shard:plan": "npm --prefix scripts run shard -- --dir ../tests/api/specs --weights ../tests/api/test-weights.json --total 4 --format plan",
     "demo:shards": "./scripts/local-demo.sh --shards 8",
-    "compose:test": "docker compose --profile test run --rm api-tests"
+    "compose:test": "docker compose --profile test run --rm api-tests",
+    "ci:install": "npm --prefix app/auth-service ci && npm --prefix app/notes-service ci && npm --prefix app/gateway ci && npm --prefix scripts ci && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm --prefix tests/api ci"
   }
 }
