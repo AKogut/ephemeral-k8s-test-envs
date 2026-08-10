@@ -168,13 +168,28 @@ one.
 
 ## What would you do next?
 
-In order:
+All nine known limitations of v1.0 are tracked under the
+[Beyond v1.0 milestone](https://github.com/AKogut/ephemeral-k8s-test-envs/milestone/7).
+Each issue states what breaks today, what "done" would mean, and what is still an
+open question rather than a decided plan.
 
-1. **Object storage for results**, removing the shared-volume constraint entirely
-   and letting shards run on any node.
-2. **Per-namespace `ResourceQuota`**, so one runaway environment cannot starve a
-   shared cluster.
-3. **Weights regenerated automatically** from each run's JUnit output, so shard
-   balance improves on its own as the suite grows.
-4. **A preview URL per environment** — the piece that makes these useful to people
-   who are not running the tests.
+In order of what actually changes the answer to "could a team use this":
+
+1. **[Object storage for results](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/82)**
+   — removes the only thing in the design that constrains where pods may run.
+   Until then, every shard is pinned to one node and the measured speedup is a
+   single-machine number.
+2. **[A run on a managed cluster](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/86)**
+   — turns "no provider dependency" from an argument into a result.
+3. **[Per-namespace `ResourceQuota`](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/83)**
+   — so one runaway environment cannot starve a shared cluster.
+4. **[A preview URL per environment](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/84)**
+   — the piece that makes these useful to people who are not running the tests.
+
+The rest — [weights](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/85),
+[fleet metrics](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/87),
+[reusability](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/88),
+[a networked database](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/89),
+[an enforced NetworkPolicy](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/90)
+— matter, but none of them changes what the project can do the way the first two
+do.

@@ -340,6 +340,29 @@ overlooked:
   EKS/GKE would involve is tabulated in
   [architecture.md](docs/architecture.md#what-a-cloud-deployment-would-change).
 
+## What v1.0 does not do
+
+Different from the list above. Those are omissions with an argument. These are
+**limitations** — nine of them, each tracked as an issue that says what breaks
+today, what "done" would mean, and what is still undecided.
+
+| | Why it matters |
+|---|---|
+| [#82](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/82) Results on a shared `ReadWriteOnce` volume | Pins every shard to one node. The measured 3.19× is a single-machine number |
+| [#83](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/83) No `ResourceQuota` per namespace | One environment can starve a shared cluster |
+| [#84](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/84) No preview URL | Only reachable by `port-forward`, so only by engineers with cluster access |
+| [#85](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/85) Shard weights maintained by hand | Balance decays silently as the suite grows |
+| [#86](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/86) Only ever run on `kind` | "No provider dependency" is an argument, not yet a result |
+| [#87](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/87) No fleet metrics | Teardown is proven per run, never measured over time |
+| [#88](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/88) A pattern, not a platform | Adopting it means copying files |
+| [#89](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/89) No networked database | StatefulSets, migrations and readiness gates go unexercised |
+| [#90](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/90) NetworkPolicy never enforced | kind's CNI ignores it, so it has been read but never executed |
+
+→ [the full milestone](https://github.com/AKogut/ephemeral-k8s-test-envs/milestone/7)
+
+A limitation nobody wrote down becomes a surprise for whoever finds it. These are
+written down.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the development loops and conventions.
