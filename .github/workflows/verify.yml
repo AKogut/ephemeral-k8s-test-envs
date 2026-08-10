@@ -1,0 +1,148 @@
+name: Verify
+
+# Everything that does not need a cluster, so a typo fails in a minute rather
+# than after a five-minute deploy. This workflow grows with the project; the
+# full ephemeral-environment pipeline arrives in Phase 5.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: verify-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  code:
+    name: Typecheck and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          npm --prefix app/auth-service ci
+          npm --prefix app/notes-service ci
+          npm --prefix app/gateway ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+  images:
+    name: Build ${{ matrix.component }} image
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [auth-service, notes-service, gateway]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: app/${{ matrix.component }}
+          file: app/${{ matrix.component }}/Dockerfile
+          push: false
+          load: true
+          tags: ${{ matrix.component }}:ci
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,scope=${{ matrix.component }},mode=max
+
+      - name: Report image size
+        run: |
+          size=$(docker image inspect ${{ matrix.component }}:ci --format '{{.Size}}')
+          printf '| `%s` | %s MB |\n' "${{ matrix.component }}" "$((size / 1000000))" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Container starts, serves and shuts down cleanly
+        run: |
+          # A container that builds is not the same as a container that runs.
+          # This catches a runtime stage missing a file the build stage had.
+          docker run -d --name probe -p 127.0.0.1:8080:${{ matrix.component == 'gateway' && '3000' || (matrix.component == 'auth-service' && '3001' || '3002') }} \
+            -e JWT_SECRET=ci-secret -e DATABASE_PATH=:memory: \
+            ${{ matrix.component }}:ci
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1; then ready=1; break; fi
+            sleep 1
+          done
+
+          if [ "${ready:-0}" != "1" ]; then
+            echo "::error::${{ matrix.component }} never became healthy"
+            docker logs probe
+            exit 1
+          fi
+
+          curl -fsS http://127.0.0.1:8080/healthz
+          echo
+          curl -fsS http://127.0.0.1:8080/version
+          echo
+
+          # SIGTERM must drain rather than be ignored — Kubernetes relies on it.
+          docker stop --timeout 15 probe
+          exit_code=$(docker inspect probe --format '{{.State.ExitCode}}')
+          docker logs probe | tail -5
+          if [ "$exit_code" != "0" ]; then
+            echo "::error::${{ matrix.component }} did not shut down cleanly (exit $exit_code)"
+            exit 1
+          fi
+
+  stack:
+    name: docker compose stack
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start the stack
+        run: docker compose up --build -d --wait --wait-timeout 180
+
+      - name: The three services agree they are one environment
+        run: |
+          set -euo pipefail
+          curl -fsS localhost:3000/readyz | tee /tmp/ready.json
+          echo
+
+          # A full journey through the gateway: register, log in, create, read.
+          curl -fsS -X POST localhost:3000/auth/register \
+            -H 'content-type: application/json' \
+            -d '{"email":"ci@example.test","password":"correct-horse-battery-staple"}' >/dev/null
+
+          token=$(curl -fsS -X POST localhost:3000/auth/login \
+            -H 'content-type: application/json' \
+            -d '{"email":"ci@example.test","password":"correct-horse-battery-staple"}' \
+            | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).token))")
+
+          note=$(curl -fsS -X POST localhost:3000/notes \
+            -H "authorization: Bearer $token" -H 'content-type: application/json' \
+            -d '{"title":"from ci","tags":["ci"]}')
+          echo "$note"
+
+          # notes-service must have verified the token against auth-service.
+          curl -fsS localhost:3002/readyz | grep -q 'verify-with-auth-service'
+          echo "service-to-service verification is active"
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs --tail=60
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

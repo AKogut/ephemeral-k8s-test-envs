@@ -1,0 +1,9 @@
+node_modules
+dist
+.data
+data
+*.sqlite*
+*.log
+.env*
+Dockerfile
+.dockerignore

@@ -1,0 +1,22 @@
+{
+  "name": "ephemeral-k8s-test-envs",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Per-pull-request ephemeral test environments on Kubernetes.",
+  "license": "MIT",
+  "author": "AKogut",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AKogut/ephemeral-k8s-test-envs.git"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "install:all": "npm --prefix app/auth-service install && npm --prefix app/notes-service install && npm --prefix app/gateway install",
+    "build": "npm --prefix app/auth-service run build && npm --prefix app/notes-service run build && npm --prefix app/gateway run build",
+    "typecheck": "npm --prefix app/auth-service run typecheck && npm --prefix app/notes-service run typecheck && npm --prefix app/gateway run typecheck",
+    "compose:up": "docker compose up --build -d",
+    "compose:down": "docker compose down -v"
+  }
+}

@@ -1,0 +1,95 @@
+# Local sanity check for the application stack, outside Kubernetes.
+#
+# This is deliberately *not* how the ephemeral environments run — it exists so
+# the three services can be exercised (and the API suite pointed at them) in a
+# few seconds without a cluster. The Kubernetes path is scripts/local-demo.sh.
+#
+#   docker compose up --build          -> gateway on http://localhost:3000
+
+name: ephemeral-test-envs
+
+x-common-env: &common-env
+  NODE_ENV: production
+  ENV_ID: docker-compose
+  LOG_LEVEL: info
+  JWT_SECRET: ${JWT_SECRET:-local-compose-secret}
+  JWT_ISSUER: ephemeral-test-envs/auth-service
+  JWT_AUDIENCE: ephemeral-test-envs
+
+services:
+  auth-service:
+    build:
+      context: ./app/auth-service
+      args:
+        SERVICE_VERSION: local
+    environment:
+      <<: *common-env
+      PORT: 3001
+      DATABASE_PATH: /data/auth.sqlite
+      # Production cost is 14; lowered here so the suite is not dominated by
+      # password hashing. See docs/adr/0005-test-tuned-kdf-cost.md.
+      SCRYPT_COST_LOG2: 12
+    volumes:
+      - auth-data:/data
+    ports:
+      - "3001:3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  notes-service:
+    build:
+      context: ./app/notes-service
+      args:
+        SERVICE_VERSION: local
+    environment:
+      <<: *common-env
+      PORT: 3002
+      DATABASE_PATH: /data/notes.sqlite
+      AUTH_MODE: verify-with-auth-service
+      AUTH_SERVICE_URL: http://auth-service:3001
+    volumes:
+      - notes-data:/data
+    ports:
+      - "3002:3002"
+    depends_on:
+      auth-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3002/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  gateway:
+    build:
+      context: ./app/gateway
+      args:
+        SERVICE_VERSION: local
+    environment:
+      <<: *common-env
+      PORT: 3000
+      AUTH_SERVICE_URL: http://auth-service:3001
+      NOTES_SERVICE_URL: http://notes-service:3002
+    ports:
+      - "3000:3000"
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      notes-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+
+volumes:
+  auth-data:
+  notes-data:
