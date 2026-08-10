@@ -1,4 +1,21 @@
 version: 2
+
+# Two majors are held back deliberately, in every npm package.
+#
+#   @types/node  — describes the standard library of a specific Node major. The
+#                  runtime here is Node 22 (`engines`, and every Dockerfile base
+#                  image), so types from a later major would advertise APIs that
+#                  are not present at runtime. This tracks the runtime, and moves
+#                  when the runtime moves — not before.
+#
+#   typescript   — 7.x is a genuine breaking change for this code, not a flake:
+#                  it fails to resolve `@types/node` under the current tsconfigs
+#                  (TS2591) and then reports every inferred parameter as an
+#                  implicit `any` (TS7006). Adopting it is a deliberate migration
+#                  with its own pull request, not a dependency bump.
+#
+# Both remain open to minor and patch updates, so security fixes still arrive.
+
 updates:
   # Five independent npm packages — no workspace hoisting, so each is tracked
   # separately and an update to one cannot silently change another.
@@ -9,6 +26,11 @@ updates:
     groups:
       dev-dependencies:
         dependency-type: development
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
     directory: /app/notes-service
@@ -17,21 +39,41 @@ updates:
     groups:
       dev-dependencies:
         dependency-type: development
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
     directory: /app/gateway
     schedule: { interval: monthly }
     open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
     directory: /scripts
     schedule: { interval: monthly }
     open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
     directory: /tests/api
     schedule: { interval: monthly }
     open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
