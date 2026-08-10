@@ -332,9 +332,15 @@ jobs:
           {"uuid":"c","historyId":"h2","name":"flaky","fullName":"suite > flaky","status":"passed","start":500,"stop":1000}
           JSON
 
+          # The image runs as uid 1000 and the runner writes as 1001, so the
+          # bind mount needs handing over. In a cluster this is the PVC's
+          # fsGroup instead.
+          sudo chown -R 1000:1000 /tmp/results
+
           docker run --rm -v /tmp/results:/results aggregator:ci \
             --input /results --env-id ci-synthetic --expect-shards 2
 
+          sudo chmod -R a+r /tmp/results/merged
           python3 - <<'PY_INNER'
           import json
           s = json.load(open('/tmp/results/merged/summary.json'))
@@ -349,7 +355,7 @@ jobs:
       - name: A missing shard directory fails aggregation
         run: |
           # Reporting a green run over a partial suite would be worse than failing.
-          rm -rf /tmp/results/merged
+          sudo rm -rf /tmp/results/merged
           if docker run --rm -v /tmp/results:/results aggregator:ci \
                --input /results --env-id ci --expect-shards 4; then
             echo "::error::aggregator accepted a run with missing shards"
