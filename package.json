@@ -26,6 +26,7 @@
     "demo:keep": "./scripts/local-demo.sh --keep",
     "demo:cleanup": "./scripts/local-demo.sh --cleanup-only",
     "test:unit": "npm --prefix scripts test",
+    "test:coverage": "npm --prefix scripts run test:coverage",
     "test:api": "npm --prefix tests/api test",
     "shard:plan": "npm --prefix scripts run shard -- --dir ../tests/api/specs --weights ../tests/api/test-weights.json --total 4 --format plan",
     "demo:shards": "./scripts/local-demo.sh --shards 8",

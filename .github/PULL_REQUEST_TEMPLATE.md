@@ -6,8 +6,9 @@
 
 <!-- Delete what does not apply. An unchecked box is fine; an untrue checked box is not. -->
 
+- [ ] `npm run lint`
 - [ ] `npm run typecheck`
-- [ ] `npm run test:unit` — the 72 unit tests
+- [ ] `npm run test:coverage` — the 90 unit tests, against the thresholds CI enforces
 - [ ] `npm run helm:lint`
 - [ ] `./scripts/local-demo.sh` — the full lifecycle on kind
 - [ ] The API suite passes against a running environment

@@ -25,7 +25,7 @@ than after a five-minute deploy.
 |---|---|
 | `npm run lint` | ESLint with type-aware rules across all five packages |
 | `npm run typecheck` | Type errors across all five packages |
-| `npm run test:unit` | 72 unit tests — sharding, aggregation, CLI parsing, Job status |
+| `npm run test:coverage` | 90 unit tests — sharding, aggregation, CLI parsing, the cluster client — **gated** at 99% lines / 94% branches / 100% functions |
 | `shellcheck scripts/*.sh` | Shell bugs, which are otherwise found in production |
 | `npm run helm:lint` | Chart syntax, with default and CI values |
 | Render at 1, 2, 4, 8, 16 shards | A chart that only works at the default shard count |
