@@ -139,7 +139,7 @@ tests:
   # which records the retry in the report.
   backoffLimit: 0
   # -- Finished shard pods clean themselves up even if nothing else does. This is
-  # pod hygiene, not environment cleanup — that arrives in Phase 4.
+  # pod hygiene, not environment cleanup — see docs/cost-and-cleanup.md.
   ttlSecondsAfterFinished: 900
   activeDeadlineSeconds: 1800
 
@@ -200,6 +200,26 @@ resultsExporter:
     limits:
       cpu: 100m
       memory: 64Mi
+
+# ------------------------------------------------------------------ teardown --
+
+teardown:
+  # -- Second line of defence. The primary teardown is the explicit
+  # `helm uninstall` + `kubectl delete namespace` step in CI; this Job covers the
+  # case where the pipeline dies before reaching it — a cancelled workflow, a
+  # runner that is killed. Off by default because it would delete a namespace
+  # out from under someone using local-demo.sh interactively.
+  selfDestruct:
+    enabled: false
+    afterSeconds: 3600
+    ttlSecondsAfterFinished: 300
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
 
 # --------------------------------------------------------------------- misc --
 

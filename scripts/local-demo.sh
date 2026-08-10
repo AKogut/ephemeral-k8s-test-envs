@@ -2,7 +2,7 @@
 #
 # One-command local environment: kind cluster -> build images -> deploy.
 #
-#   ./scripts/local-demo.sh                 # deploy, shard, aggregate, tear down
+#   ./scripts/local-demo.sh                 # deploy, shard, aggregate, tear down, prove it
 #   ./scripts/local-demo.sh --keep          # leave it running to poke at
 #   ./scripts/local-demo.sh --shards 8      # more shards
 #   ./scripts/local-demo.sh --no-tests      # just stand the environment up
@@ -96,6 +96,10 @@ EOF
   else
     warn "no namespace to delete"
   fi
+
+  # The claim this project makes is that nothing is left behind. Asserting it
+  # here means a broken teardown fails the demo rather than going unnoticed.
+  "$REPO_ROOT/scripts/verify-teardown.sh" --namespace "$NAMESPACE" --release "$RELEASE" || exit_code=1
 
   if [[ "$KEEP_CLUSTER" != true ]]; then
     if kind delete cluster --name "$CLUSTER_NAME" >/dev/null 2>&1; then

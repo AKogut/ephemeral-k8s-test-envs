@@ -1,0 +1,74 @@
+{{- if .Values.teardown.selfDestruct.enabled }}
+{{/*
+Self-destruct Job — the "even if CI dies" guarantee.
+
+The primary teardown path is explicit and lives in the pipeline:
+
+    helm uninstall … && kubectl delete namespace …   (wrapped in if: always())
+
+That covers a failing test run, a failing deploy, and a failing aggregation.
+What it does not cover is the pipeline itself never finishing: a cancelled
+workflow, a runner that is killed mid-job, a network partition between the
+runner and the cluster. In those cases nothing on the CI side ever runs again,
+and without this Job the namespace would sit there consuming quota indefinitely.
+
+So the environment is given the means to remove itself. The Job sleeps for
+`afterSeconds` and then asks the API server to delete its own namespace, using a
+ClusterRole pinned by `resourceNames` to exactly that one namespace.
+
+Off by default: pointing this at an environment someone is using interactively
+via local-demo.sh would delete it out from under them.
+
+See docs/cost-and-cleanup.md.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "test-env.teardownJobName" . }}
+  labels:
+    {{- include "test-env.componentLabels" (dict "context" . "component" "teardown") | nindent 4 }}
+  annotations:
+    ephemeral-test-envs.io/deletes-namespace-after: {{ .Values.teardown.selfDestruct.afterSeconds | quote }}
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: {{ .Values.teardown.selfDestruct.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "test-env.componentLabels" (dict "context" . "component" "teardown") | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "test-env.teardownServiceAccountName" . }}
+      automountServiceAccountToken: true
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: self-destruct
+          image: {{ include "test-env.image" (dict "context" . "component" "aggregator") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["node", "dist/self-destruct.js"]
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          env:
+            - name: SELF_DESTRUCT_AFTER_SECONDS
+              value: {{ .Values.teardown.selfDestruct.afterSeconds | quote }}
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_EXTRA_CA_CERTS
+              value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          resources:
+            {{- toYaml .Values.teardown.selfDestruct.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 16Mi
+{{- end }}
