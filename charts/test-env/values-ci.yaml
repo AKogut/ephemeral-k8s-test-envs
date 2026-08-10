@@ -51,3 +51,26 @@ gateway:
     limits:
       cpu: 400m
       memory: 128Mi
+
+tests:
+  enabled: true
+  shards: 4
+  # 4 shards x 1 worker on a 4 vCPU runner. Raising workers here makes the pods
+  # compete with each other and with the services they are testing, which shows
+  # up as timeout flakiness rather than as a faster run.
+  workers: 1
+  retries: 1
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 600
+  activeDeadlineSeconds: 1200
+  readyTimeoutMs: 240000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 160Mi
+    limits:
+      cpu: 900m
+      memory: 512Mi
+  results:
+    size: 512Mi
+    accessMode: ReadWriteOnce

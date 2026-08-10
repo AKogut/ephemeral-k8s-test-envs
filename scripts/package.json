@@ -1,0 +1,23 @@
+{
+  "name": "test-env-scripts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Deterministic test sharding for the ephemeral test environments.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test src/*.test.ts",
+    "test:coverage": "node --import tsx --test --experimental-test-coverage src/*.test.ts",
+    "shard": "node --import tsx src/shard-tests.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.8",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

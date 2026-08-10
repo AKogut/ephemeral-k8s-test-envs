@@ -1,0 +1,119 @@
+{{- if .Values.tests.enabled }}
+{{/*
+The sharded test Job.
+
+`completionMode: Indexed` is the whole trick. One Job object produces N pods,
+each given a distinct index 0..N-1 in the JOB_COMPLETION_INDEX environment
+variable, and the Job is only complete when *every* index has succeeded. That is
+a work queue with no queue: each pod recomputes the same deterministic shard
+plan and takes its own slice, so there is no broker, no leader election and
+nothing to go stale if a pod is rescheduled.
+
+Two deliberate non-choices:
+
+  - No Helm hook. The suite waits for /readyz itself (run-shard.mjs), which
+    works identically under `helm install`, `kubectl apply` and docker compose.
+  - backoffLimit 0. Retrying a whole pod would hide a genuine failure; flaky
+    tests are retried by Playwright instead, where the retry is recorded.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "test-env.shardJobName" . }}
+  labels:
+    {{- include "test-env.componentLabels" (dict "context" . "component" .Values.tests.component) | nindent 4 }}
+spec:
+  completionMode: Indexed
+  completions: {{ .Values.tests.shards }}
+  parallelism: {{ .Values.tests.shards }}
+  backoffLimit: {{ .Values.tests.backoffLimit }}
+  # Finished pods disappear on their own even if the pipeline never reaches its
+  # cleanup step — the first of the two teardown guarantees.
+  ttlSecondsAfterFinished: {{ .Values.tests.ttlSecondsAfterFinished }}
+  # A hung suite cannot pin the namespace open indefinitely.
+  activeDeadlineSeconds: {{ .Values.tests.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "test-env.componentLabels" (dict "context" . "component" .Values.tests.component) | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "test-env.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: api-tests
+          image: {{ include "test-env.image" (dict "context" . "component" "api-tests") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          env:
+            # JOB_COMPLETION_INDEX is injected by the Job controller for Indexed
+            # jobs; it is the only thing that distinguishes these N identical pods.
+            - name: SHARD_TOTAL
+              value: {{ .Values.tests.shards | quote }}
+            - name: ENV_ID
+              value: {{ include "test-env.envId" . | quote }}
+            - name: GIT_SHA
+              value: {{ include "test-env.imageTag" . | quote }}
+            # Everything goes through the gateway, so the suite exercises the
+            # same path a real client would.
+            - name: BASE_URL
+              value: {{ include "test-env.gatewayUrl" . | quote }}
+            # …except the health checks, which assert on each service directly.
+            - name: AUTH_URL
+              value: {{ include "test-env.authUrl" . | quote }}
+            - name: NOTES_URL
+              value: {{ include "test-env.notesUrl" . | quote }}
+            - name: RESULTS_DIR
+              value: /results
+            - name: READY_TIMEOUT_MS
+              value: {{ .Values.tests.readyTimeoutMs | quote }}
+            - name: PW_WORKERS
+              value: {{ .Values.tests.workers | quote }}
+            - name: PW_RETRIES
+              value: {{ .Values.tests.retries | quote }}
+            - name: PW_TEST_TIMEOUT_MS
+              value: {{ .Values.tests.testTimeoutMs | quote }}
+            - name: HOME
+              value: /tmp
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          resources:
+            {{- toYaml .Values.tests.resources | nindent 12 }}
+          volumeMounts:
+            - name: results
+              mountPath: /results
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: results
+          persistentVolumeClaim:
+            claimName: {{ include "test-env.resultsPvcName" . }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 128Mi
+      {{- with .Values.tests.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tests.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tests.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

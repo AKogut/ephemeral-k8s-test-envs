@@ -1,0 +1,14 @@
+{
+  "_comment": "Approximate wall-clock seconds per spec file, used by scripts/src/sharding.ts to balance shards. Regenerate with `npm run weights:update` after a full run; stale numbers only cost balance, never correctness.",
+  "auth-login.spec.ts": 3.1,
+  "auth-me.spec.ts": 2.4,
+  "auth-register.spec.ts": 3.8,
+  "gateway-routing.spec.ts": 3.0,
+  "notes-authz.spec.ts": 4.2,
+  "notes-crud.spec.ts": 4.6,
+  "notes-listing.spec.ts": 6.9,
+  "notes-validation.spec.ts": 4.4,
+  "platform-health.spec.ts": 1.8,
+  "resilience.spec.ts": 5.2,
+  "user-journey.spec.ts": 9.5
+}
