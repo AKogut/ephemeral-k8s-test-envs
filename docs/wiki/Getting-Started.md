@@ -148,4 +148,4 @@ shards over 11 spec files will not be twice as fast as 4.
 
 - [`docs/architecture.md`](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/docs/architecture.md) — how it fits together
 - [`docs/local-development.md`](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/docs/local-development.md) — three dev loops and the full config reference
-- [Runbook](Runbook) — when something breaks
+- [Runbook](Runbook.md) — when something breaks

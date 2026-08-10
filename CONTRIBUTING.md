@@ -120,6 +120,14 @@ The wiki lives in `docs/wiki/` and is mirrored to the GitHub wiki on merge. Edit
 the files here, not the wiki in the browser — a browser edit is overwritten by
 the next push to `main`.
 
+**Link between wiki pages with the `.md` extension** — `[Runbook](Runbook.md)`,
+not `[Runbook](Runbook)`. The two renderers disagree: `docs/wiki/` is browsed as
+ordinary files in the repository, where the extension is required, and the wiki
+serves pages without it. The publish workflow strips the extension on the way in,
+so writing it the repository's way is what makes the link work in both places.
+It also checks that every target exists, because a link to a missing page renders
+as plain text in the wiki rather than failing.
+
 ## Reporting a bug
 
 Use the bug template. The two most useful things to include are the
