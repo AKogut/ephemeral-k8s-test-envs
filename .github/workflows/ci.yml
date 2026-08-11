@@ -1042,9 +1042,31 @@ jobs:
           # Pinned like every other upstream image here: a controller that
           # changes under the test would make an upstream release and a real
           # regression look identical.
+          set -euo pipefail
           kubectl apply -f "$INGRESS_NGINX_MANIFEST"
-          kubectl -n ingress-nginx wait --for=condition=available --timeout=5m \
-            deployment/ingress-nginx-controller
+
+          # `wait --for=condition=available` straight after `apply` can match a
+          # status that has not caught up with the new spec. `rollout status`
+          # cannot.
+          kubectl -n ingress-nginx rollout status deployment/ingress-nginx-controller --timeout=5m
+
+          # Then wait for the thing that actually refused the connection.
+          # ingress-nginx registers a validating webhook, so *creating* an
+          # Ingress calls back into the controller — and a rolled-out
+          # Deployment is not the same as an admission endpoint with
+          # addresses. Helm fails the entire install on the difference:
+          #
+          #   failed calling webhook "validate.nginx.ingress.kubernetes.io":
+          #   dial tcp …:443: connect: connection refused
+          addresses=""
+          for _ in $(seq 1 60); do
+            addresses=$(kubectl -n ingress-nginx get endpoints ingress-nginx-controller-admission \
+              -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || true)
+            [ -n "$addresses" ] && break
+            sleep 2
+          done
+          [ -n "$addresses" ] || { echo "::error::the admission webhook never got an endpoint"; exit 1; }
+          echo "admission webhook is answering at: $addresses"
 
       - name: Install the environment with a hostname
         run: |
