@@ -56,6 +56,11 @@ spec:
           env:
             - name: SELF_DESTRUCT_AFTER_SECONDS
               value: {{ .Values.teardown.selfDestruct.afterSeconds | quote }}
+            # The ClusterRole and ClusterRoleBinding created for this Job. They
+            # are cluster-scoped, so deleting the namespace does not remove
+            # them; the Job makes the namespace their owner instead.
+            - name: TEARDOWN_RBAC_NAME
+              value: {{ include "test-env.teardownServiceAccountName" . }}-{{ .Release.Namespace }}
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:

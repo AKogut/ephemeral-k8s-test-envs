@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import {
+  adoptIntoNamespace,
   deleteNamespace,
+  getNamespaceUid,
   getJob,
   interpretJob,
   loadInClusterAccess,
@@ -314,6 +316,119 @@ describe('deleteNamespace', () => {
         () => deleteNamespace(ACCESS, 'other'),
         (error: Error) => {
           assert.match(error.message, /DELETE namespace other failed: 403/);
+          return true;
+        },
+      );
+    } finally {
+      fetchStub.restore();
+    }
+  });
+});
+
+describe('getNamespaceUid', () => {
+  it('returns the uid', async () => {
+    const fetchStub = stubFetch([jsonResponse({ metadata: { uid: 'abc-123' } })]);
+    try {
+      assert.equal(await getNamespaceUid(ACCESS, 'pr-7'), 'abc-123');
+      assert.equal(
+        fetchStub.calls[0]?.url,
+        'https://kubernetes.default.svc:443/api/v1/namespaces/pr-7',
+      );
+    } finally {
+      fetchStub.restore();
+    }
+  });
+
+  it('returns undefined for a namespace that is already gone', async () => {
+    const fetchStub = stubFetch([new Response('', { status: 404 })]);
+    try {
+      assert.equal(await getNamespaceUid(ACCESS, 'gone'), undefined);
+    } finally {
+      fetchStub.restore();
+    }
+  });
+
+  it('throws when the read is refused', async () => {
+    const fetchStub = stubFetch([new Response('forbidden', { status: 403 })]);
+    try {
+      await assert.rejects(
+        () => getNamespaceUid(ACCESS, 'other'),
+        (error: Error) => {
+          assert.match(error.message, /GET namespace other failed: 403/);
+          return true;
+        },
+      );
+    } finally {
+      fetchStub.restore();
+    }
+  });
+});
+
+describe('adoptIntoNamespace', () => {
+  it('names the namespace as owner, with the uid and without blocking its deletion', async () => {
+    const fetchStub = stubFetch([jsonResponse({ kind: 'ClusterRole' })]);
+    try {
+      const adopted = await adoptIntoNamespace(ACCESS, 'clusterroles', 'pr-7-teardown', {
+        namespace: 'pr-7',
+        uid: 'abc-123',
+      });
+      assert.equal(adopted, true);
+
+      const call = fetchStub.calls[0];
+      assert.equal(
+        call?.url,
+        'https://kubernetes.default.svc:443/apis/rbac.authorization.k8s.io/v1/clusterroles/pr-7-teardown',
+      );
+      assert.equal(call?.init?.method, 'PATCH');
+      assert.equal(
+        (call?.init?.headers as Record<string, string> | undefined)?.['content-type'],
+        'application/merge-patch+json',
+      );
+
+      const patch = JSON.parse(call?.init?.body as string) as {
+        metadata: { ownerReferences: unknown[] };
+      };
+      const owner = patch.metadata.ownerReferences[0];
+      assert.deepEqual(owner, {
+        apiVersion: 'v1',
+        kind: 'Namespace',
+        name: 'pr-7',
+        uid: 'abc-123',
+        // Never a reason a namespace cannot be deleted.
+        blockOwnerDeletion: false,
+      });
+    } finally {
+      fetchStub.restore();
+    }
+  });
+
+  it('reports an object that is not there rather than failing', async () => {
+    // helm uninstall may have removed it first; the two paths race by design.
+    const fetchStub = stubFetch([new Response('', { status: 404 })]);
+    try {
+      assert.equal(
+        await adoptIntoNamespace(ACCESS, 'clusterrolebindings', 'gone', {
+          namespace: 'pr-7',
+          uid: 'abc-123',
+        }),
+        false,
+      );
+    } finally {
+      fetchStub.restore();
+    }
+  });
+
+  it('throws when the patch is refused', async () => {
+    const fetchStub = stubFetch([new Response('forbidden', { status: 403 })]);
+    try {
+      await assert.rejects(
+        () =>
+          adoptIntoNamespace(ACCESS, 'clusterroles', 'other', {
+            namespace: 'pr-7',
+            uid: 'abc-123',
+          }),
+        (error: Error) => {
+          assert.match(error.message, /PATCH clusterroles\/other failed: 403/);
           return true;
         },
       );

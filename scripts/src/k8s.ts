@@ -126,6 +126,86 @@ export async function getJob(
   return interpretJob(name, (await response.json()) as RawJob);
 }
 
+/** The two cluster-scoped objects an environment creates for its own teardown. */
+export type ClusterRbacResource = 'clusterroles' | 'clusterrolebindings';
+
+/**
+ * The namespace's uid, needed to name it as an owner.
+ *
+ * An ownerReference without the uid is not a reference — Kubernetes uses it to
+ * tell this namespace from a later one with the same name, and refuses the
+ * patch without it.
+ */
+export async function getNamespaceUid(
+  access: ClusterAccess,
+  namespace: string,
+): Promise<string | undefined> {
+  const response = await apiRequest(access, `/api/v1/namespaces/${namespace}`);
+
+  if (response.status === 404) return undefined;
+  if (!response.ok) {
+    throw new Error(`GET namespace ${namespace} failed: ${response.status} ${await response.text()}`);
+  }
+
+  const body = (await response.json()) as { metadata?: { uid?: string } };
+  return body.metadata?.uid;
+}
+
+/**
+ * Makes the namespace the owner of a cluster-scoped RBAC object, so the
+ * garbage collector removes it when the namespace goes.
+ *
+ * Deleting a namespace does **not** delete cluster-scoped objects. The chart
+ * says so itself, next to the ClusterRole it names after the namespace so a
+ * leftover can be found. The normal teardown path removes them because
+ * `helm uninstall` does; the self-destruct path did not, so the one scenario
+ * this Job exists for — CI never came back — left two grants behind for a
+ * namespace that no longer existed.
+ *
+ * An ownerReference is the fix rather than a second delete call, because the
+ * Job cannot delete its own permissions and keep them: removing the
+ * ClusterRoleBinding first revokes the right to delete the namespace, and
+ * removing it afterwards races the invalidation of its own token. Ownership is
+ * recorded up front and Kubernetes does the rest, whenever and however the
+ * namespace goes.
+ *
+ * `blockOwnerDeletion` is false: this must never be a reason a namespace stays.
+ */
+export async function adoptIntoNamespace(
+  access: ClusterAccess,
+  resource: ClusterRbacResource,
+  name: string,
+  owner: { namespace: string; uid: string },
+): Promise<boolean> {
+  const response = await apiRequest(
+    access,
+    `/apis/rbac.authorization.k8s.io/v1/${resource}/${name}`,
+    {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/merge-patch+json' },
+      body: JSON.stringify({
+        metadata: {
+          ownerReferences: [
+            {
+              apiVersion: 'v1',
+              kind: 'Namespace',
+              name: owner.namespace,
+              uid: owner.uid,
+              blockOwnerDeletion: false,
+            },
+          ],
+        },
+      }),
+    },
+  );
+
+  if (response.status === 404) return false;
+  if (!response.ok) {
+    throw new Error(`PATCH ${resource}/${name} failed: ${response.status} ${await response.text()}`);
+  }
+  return true;
+}
+
 export async function deleteNamespace(access: ClusterAccess, namespace: string): Promise<void> {
   const response = await apiRequest(access, `/api/v1/namespaces/${namespace}`, {
     method: 'DELETE',
