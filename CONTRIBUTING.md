@@ -3,6 +3,37 @@
 This is a portfolio project, but it is set up the way a working repository should
 be, and pull requests are welcome.
 
+## Before you spend time on a pull request
+
+This is a public repository, so anyone may fork it and open a pull request —
+GitHub works that way and there is no setting that changes it. What *is*
+restricted is what happens next:
+
+**No workflow runs on a pull request from outside this repository until a
+maintainer approves it.** The setting is *Fork pull request workflows from
+outside collaborators → require approval for all outside collaborators*, not the
+default of "first-time contributors". Until that approval, every check sits
+pending and nothing you pushed has executed.
+
+The reason is what this pipeline does. A run creates a Kubernetes cluster, builds
+five images, and pushes them to a registry. That is not a sandbox worth handing to
+an unreviewed branch.
+
+Two consequences worth knowing before you start:
+
+- **Merging needs write access.** The `main` ruleset requires a pull request,
+  linear history and 13 passing checks, with no bypass actors. An outside
+  contributor cannot merge their own work here even after approval.
+- **`Push … to GHCR` will fail on a fork.** A pull request from a fork gets a
+  read-only token regardless of the `permissions:` block in the workflow, so the
+  registry push is refused — and the ephemeral-environment job depends on it.
+  That is a limitation of the pipeline, not of your change — see
+  [#92](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/92).
+
+So: **open an issue first.** For anything beyond a typo it is the faster path,
+and it avoids writing a branch whose CI cannot go green through no fault of
+yours.
+
 ## Getting set up
 
 ```bash
