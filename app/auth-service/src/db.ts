@@ -10,12 +10,22 @@ export interface UserRow {
   created_at: string;
 }
 
+/**
+ * Every method returns a promise, including the ones SQLite answers without
+ * ever yielding.
+ *
+ * better-sqlite3 is synchronous by design and this interface could have been
+ * too — right up until the store is a database on the other side of a socket,
+ * which is exactly what #89 is about. The shape of the interface is what
+ * decides whether that is a swap or a rewrite of every call site, so it is a
+ * promise here even where nothing is awaited underneath.
+ */
 export interface UserStore {
-  insert(user: Omit<UserRow, 'created_at'>): UserRow;
-  findByEmail(email: string): UserRow | undefined;
-  findById(id: string): UserRow | undefined;
-  count(): number;
-  close(): void;
+  insert(user: Omit<UserRow, 'created_at'>): Promise<UserRow>;
+  findByEmail(email: string): Promise<UserRow | undefined>;
+  findById(id: string): Promise<UserRow | undefined>;
+  count(): Promise<number>;
+  close(): Promise<void>;
 }
 
 const SCHEMA = `
@@ -50,22 +60,26 @@ export function openUserStore(databasePath: string): UserStore {
   const byIdStmt = db.prepare(`SELECT * FROM users WHERE id = ?`);
   const countStmt = db.prepare(`SELECT count(*) AS n FROM users`);
 
+  // `Promise.resolve` rather than `async`, because nothing here ever yields:
+  // the promise is the interface's, not this backend's. Writing `async` would
+  // claim a suspension point that does not exist.
   return {
     insert(user) {
       insertStmt.run(user.id, user.email, user.password_hash, user.password_salt);
-      return byIdStmt.get(user.id) as UserRow;
+      return Promise.resolve(byIdStmt.get(user.id) as UserRow);
     },
     findByEmail(email) {
-      return byEmailStmt.get(email) as UserRow | undefined;
+      return Promise.resolve(byEmailStmt.get(email) as UserRow | undefined);
     },
     findById(id) {
-      return byIdStmt.get(id) as UserRow | undefined;
+      return Promise.resolve(byIdStmt.get(id) as UserRow | undefined);
     },
     count() {
-      return (countStmt.get() as { n: number }).n;
+      return Promise.resolve((countStmt.get() as { n: number }).n);
     },
     close() {
       db.close();
+      return Promise.resolve();
     },
   };
 }

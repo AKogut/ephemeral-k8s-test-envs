@@ -42,16 +42,26 @@ export interface NoteInput {
   pinned: boolean;
 }
 
+/**
+ * Every method returns a promise, including the ones SQLite answers without
+ * ever yielding.
+ *
+ * better-sqlite3 is synchronous by design and this interface could have been
+ * too — right up until the store is a database on the other side of a socket,
+ * which is exactly what #89 is about. The shape of the interface is what
+ * decides whether that is a swap or a rewrite of every call site, so it is a
+ * promise here even where nothing is awaited underneath.
+ */
 export interface NoteStore {
-  create(ownerId: string, input: NoteInput): Note;
-  findById(ownerId: string, id: string): Note | undefined;
-  list(query: ListQuery): { items: Note[]; total: number };
-  replace(ownerId: string, id: string, input: NoteInput): Note | undefined;
-  update(ownerId: string, id: string, patch: Partial<NoteInput>): Note | undefined;
-  remove(ownerId: string, id: string): boolean;
-  tagCounts(ownerId: string): Array<{ tag: string; count: number }>;
-  ping(): number;
-  close(): void;
+  create(ownerId: string, input: NoteInput): Promise<Note>;
+  findById(ownerId: string, id: string): Promise<Note | undefined>;
+  list(query: ListQuery): Promise<{ items: Note[]; total: number }>;
+  replace(ownerId: string, id: string, input: NoteInput): Promise<Note | undefined>;
+  update(ownerId: string, id: string, patch: Partial<NoteInput>): Promise<Note | undefined>;
+  remove(ownerId: string, id: string): Promise<boolean>;
+  tagCounts(ownerId: string): Promise<Array<{ tag: string; count: number }>>;
+  ping(): Promise<number>;
+  close(): Promise<void>;
 }
 
 const SCHEMA = `
@@ -145,6 +155,9 @@ export function openNoteStore(databasePath: string): NoteStore {
     return { where: clauses.join(' AND '), params };
   }
 
+  // `Promise.resolve` rather than `async`, because nothing here ever yields:
+  // the promise is the interface's, not this backend's. Writing `async` would
+  // claim a suspension point that does not exist.
   return {
     create(ownerId, input) {
       const timestamp = nowIso();
@@ -159,12 +172,12 @@ export function openNoteStore(databasePath: string): NoteStore {
         updated_at: timestamp,
       };
       insertStmt.run(row);
-      return toNote(row);
+      return Promise.resolve(toNote(row));
     },
 
     findById(ownerId, id) {
       const row = byIdStmt.get(ownerId, id) as NoteRow | undefined;
-      return row ? toNote(row) : undefined;
+      return Promise.resolve(row ? toNote(row) : undefined);
     },
 
     list(query) {
@@ -184,12 +197,12 @@ export function openNoteStore(databasePath: string): NoteStore {
         )
         .all({ ...params, limit: query.limit, offset: query.offset }) as NoteRow[];
 
-      return { items: rows.map(toNote), total };
+      return Promise.resolve({ items: rows.map(toNote), total });
     },
 
     replace(ownerId, id, input) {
       const existing = byIdStmt.get(ownerId, id) as NoteRow | undefined;
-      if (!existing) return undefined;
+      if (!existing) return Promise.resolve(undefined);
       updateStmt.run({
         owner_id: ownerId,
         id,
@@ -199,12 +212,12 @@ export function openNoteStore(databasePath: string): NoteStore {
         pinned: input.pinned ? 1 : 0,
         updated_at: nowIso(),
       });
-      return toNote(byIdStmt.get(ownerId, id) as NoteRow);
+      return Promise.resolve(toNote(byIdStmt.get(ownerId, id) as NoteRow));
     },
 
     update(ownerId, id, patch) {
       const existing = byIdStmt.get(ownerId, id) as NoteRow | undefined;
-      if (!existing) return undefined;
+      if (!existing) return Promise.resolve(undefined);
       const current = toNote(existing);
       updateStmt.run({
         owner_id: ownerId,
@@ -215,11 +228,11 @@ export function openNoteStore(databasePath: string): NoteStore {
         pinned: (patch.pinned ?? current.pinned) ? 1 : 0,
         updated_at: nowIso(),
       });
-      return toNote(byIdStmt.get(ownerId, id) as NoteRow);
+      return Promise.resolve(toNote(byIdStmt.get(ownerId, id) as NoteRow));
     },
 
     remove(ownerId, id) {
-      return deleteStmt.run(ownerId, id).changes > 0;
+      return Promise.resolve(deleteStmt.run(ownerId, id).changes > 0);
     },
 
     tagCounts(ownerId) {
@@ -229,17 +242,20 @@ export function openNoteStore(databasePath: string): NoteStore {
           counts.set(tag, (counts.get(tag) ?? 0) + 1);
         }
       }
-      return [...counts.entries()]
-        .map(([tag, count]) => ({ tag, count }))
-        .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+      return Promise.resolve(
+        [...counts.entries()]
+          .map(([tag, count]) => ({ tag, count }))
+          .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag)),
+      );
     },
 
     ping() {
-      return (pingStmt.get() as { n: number }).n;
+      return Promise.resolve((pingStmt.get() as { n: number }).n);
     },
 
     close() {
       db.close();
+      return Promise.resolve();
     },
   };
 }

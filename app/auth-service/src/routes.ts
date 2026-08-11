@@ -37,12 +37,12 @@ export function createAuthRouter(store: UserStore, config: Config): Router {
     asyncRoute(async (req, res) => {
       const { email, password } = credentialsSchema.parse(req.body);
 
-      if (store.findByEmail(email)) {
+      if (await store.findByEmail(email)) {
         throw ApiError.conflict('EMAIL_ALREADY_REGISTERED', 'That email is already registered');
       }
 
       const { hash, salt } = await hashPassword(password, config.scryptCostLog2);
-      const user = store.insert({
+      const user = await store.insert({
         id: randomUUID(),
         email,
         password_hash: hash,
@@ -58,7 +58,7 @@ export function createAuthRouter(store: UserStore, config: Config): Router {
     '/login',
     asyncRoute(async (req, res) => {
       const { email, password } = credentialsSchema.parse(req.body);
-      const user = store.findByEmail(email);
+      const user = await store.findByEmail(email);
 
       // Same error and roughly the same cost whether or not the account exists,
       // so response codes and timing do not leak which emails are registered.
@@ -82,25 +82,28 @@ export function createAuthRouter(store: UserStore, config: Config): Router {
     }),
   );
 
-  router.get('/me', (req, res) => {
-    const token = bearerToken(req.header('authorization'));
-    const result = verifyAccessToken(token, config);
+  router.get(
+    '/me',
+    asyncRoute(async (req, res) => {
+      const token = bearerToken(req.header('authorization'));
+      const result = verifyAccessToken(token, config);
 
-    if (!result.ok) {
-      throw result.reason === 'expired'
-        ? ApiError.unauthorized('TOKEN_EXPIRED', 'Access token has expired')
-        : ApiError.unauthorized('TOKEN_INVALID', 'Access token is not valid');
-    }
+      if (!result.ok) {
+        throw result.reason === 'expired'
+          ? ApiError.unauthorized('TOKEN_EXPIRED', 'Access token has expired')
+          : ApiError.unauthorized('TOKEN_INVALID', 'Access token is not valid');
+      }
 
-    const user = store.findById(result.claims.sub);
-    if (!user) {
-      // The token signature is valid but the subject is gone — possible after a
-      // namespace is recycled while a client still holds an old token.
-      throw ApiError.unauthorized('TOKEN_INVALID', 'Token subject no longer exists');
-    }
+      const user = await store.findById(result.claims.sub);
+      if (!user) {
+        // The token signature is valid but the subject is gone — possible after a
+        // namespace is recycled while a client still holds an old token.
+        throw ApiError.unauthorized('TOKEN_INVALID', 'Token subject no longer exists');
+      }
 
-    res.status(200).json(publicUser(user));
-  });
+      res.status(200).json(publicUser(user));
+    }),
+  );
 
   return router;
 }
@@ -116,23 +119,30 @@ export function createSystemRouter(store: UserStore, config: Config): Router {
   });
 
   // Readiness: the process can actually serve traffic, database included.
+  //
+  // Not wrapped in asyncRoute: a rejected store call here must become a 503
+  // with the reason in the body, which is what Kubernetes and a human reading
+  // `kubectl describe` both need. Handing it to the error handler would make
+  // an unreachable database a 500 like any other.
   router.get('/readyz', (_req, res) => {
-    try {
-      const users = store.count();
-      res.status(200).json({
-        status: 'ready',
-        service: config.serviceName,
-        envId: config.envId,
-        uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
-        checks: { database: 'ok', users },
-      });
-    } catch (error) {
-      res.status(503).json({
-        status: 'not-ready',
-        service: config.serviceName,
-        checks: { database: error instanceof Error ? error.message : 'unknown error' },
-      });
-    }
+    store.count().then(
+      (users) => {
+        res.status(200).json({
+          status: 'ready',
+          service: config.serviceName,
+          envId: config.envId,
+          uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
+          checks: { database: 'ok', users },
+        });
+      },
+      (error: unknown) => {
+        res.status(503).json({
+          status: 'not-ready',
+          service: config.serviceName,
+          checks: { database: error instanceof Error ? error.message : 'unknown error' },
+        });
+      },
+    );
   });
 
   router.get('/version', (_req, res) => {
