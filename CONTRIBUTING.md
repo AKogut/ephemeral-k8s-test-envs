@@ -16,23 +16,27 @@ default of "first-time contributors". Until that approval, every check sits
 pending and nothing you pushed has executed.
 
 The reason is what this pipeline does. A run creates a Kubernetes cluster, builds
-five images, and pushes them to a registry. That is not a sandbox worth handing to
+five images, and runs a suite against them. That is not a sandbox worth handing to
 an unreviewed branch.
 
-Two consequences worth knowing before you start:
+Once approved, **the run is the same one a maintainer's branch gets**, with one
+difference you may notice in the logs: your run cannot push to the registry or
+publish to code scanning, because a fork's token is read-only whatever the
+workflow asks for. So it doesn't try. The images are built exactly as usual and
+carried to the cluster job as artifacts instead, and every check that decides
+anything — the vulnerability gate, the chart assertions, the enforced
+NetworkPolicy, the sharded suite, the teardown proof — runs and is enforced.
+
+Two things are still worth knowing before you start:
 
 - **Merging needs write access.** The `main` ruleset requires a pull request,
   linear history and 13 passing checks, with no bypass actors. An outside
   contributor cannot merge their own work here even after approval.
-- **`Push … to GHCR` will fail on a fork.** A pull request from a fork gets a
-  read-only token regardless of the `permissions:` block in the workflow, so the
-  registry push is refused — and the ephemeral-environment job depends on it.
-  That is a limitation of the pipeline, not of your change — see
-  [#92](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/92).
+- **The summary comment will not appear on your pull request.** Posting a comment
+  is a write too. The identical report is in the run's job summary.
 
 So: **open an issue first.** For anything beyond a typo it is the faster path,
-and it avoids writing a branch whose CI cannot go green through no fault of
-yours.
+and it saves you writing a branch nobody had agreed to.
 
 ## Getting set up
 

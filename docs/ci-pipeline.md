@@ -63,7 +63,10 @@ found and what was changed because of it.
 
 ## Job 2 — `build`
 
-Five images, built in parallel with a matrix, pushed to GHCR.
+Five images, built in parallel with a matrix, and delivered to the cluster jobs
+by whichever route the run is allowed to use: pushed to GHCR, or exported as a
+docker archive and carried between jobs as an artifact. See
+[a pull request from a fork](#a-pull-request-from-a-fork) for why there are two.
 
 **Tagged with the commit SHA, never with a branch name.** An environment must be
 pinned to exactly the code that produced it; `:latest` or `:main` on a PR
@@ -193,14 +196,63 @@ permissions:
   pull-requests: write    # post the summary comment
 ```
 
+## A pull request from a fork
+
+A `pull_request` event from a fork gets a **read-only** `GITHUB_TOKEN` no matter
+what the `permissions:` block asks for. That is deliberate on GitHub's part and
+cannot be overridden — otherwise anyone could open a pull request that pushes an
+image to your registry.
+
+So the workflow computes once, at the top, whether it is holding a token that can
+write anything:
+
+```yaml
+CAN_WRITE: ${{ github.event_name != 'pull_request'
+            || github.event.pull_request.head.repo.full_name == github.repository }}
+```
+
+and four steps are gated on it — the registry push, the layer cache **write**,
+the code-scanning upload, and the summary comment. Everything else runs
+identically.
+
+| | Branch in this repository | Fork |
+|---|---|---|
+| Images built, scanned, gated on fixable criticals | yes | yes |
+| Where the image goes | pushed to GHCR | `type=docker` archive → artifact |
+| How the cluster gets it | `docker pull` + `kind load docker-image` | `kind load image-archive` |
+| Layer cache | read and written | read only |
+| Trivy findings in code scanning | yes | job log only |
+| Report | job summary + PR comment | job summary |
+| `Deploy, test, aggregate, tear down` | runs | **runs** |
+
+That last row is the point of the whole arrangement. The obvious fix — skip the
+jobs that cannot work on a fork — is worse than the failure it removes: a
+skipped job satisfies a required status check, so the most important check in
+the pipeline would report success without having run, on precisely the pull
+requests that deserve the most scrutiny. The registry is a convenience for
+moving five tarballs between two jobs. Nothing about *testing* the change needs
+it.
+
+Both cluster jobs get their images through one composite action,
+[`.github/actions/load-images`](../.github/actions/load-images/action.yml), which
+takes either route and then asserts that all five references are in every node's
+image store — because the chart installs with `pullPolicy: Never`, where a
+mislaid image surfaces minutes later as `ErrImageNeverPull` and reads like a
+scheduling problem.
+
 ## Running it by hand
 
-`workflow_dispatch` takes two inputs:
+`workflow_dispatch` takes three inputs:
 
 | Input | Purpose |
 |---|---|
 | `shards` | Try a different shard count without editing the workflow |
 | `keep_environment` | Skip teardown to debug a failure — the self-destruct Job still applies, so it cannot leak permanently |
+| `simulate_fork` | Force `CAN_WRITE` false, so the fork path above actually executes here |
+
+`simulate_fork` exists because a path nothing takes is a path nobody has tested.
+No pull request in this repository is from a fork, so without it the artifact
+route would be exercised for the first time by a stranger's contribution.
 
 ## Local equivalence
 
