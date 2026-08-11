@@ -23,6 +23,12 @@ Yes, and that is the trade. A cluster per PR is stronger isolation and costs
 minutes and money per environment. A namespace gives you isolated names, RBAC,
 quotas and — with a NetworkPolicy — traffic, in milliseconds and for free.
 
+The policy is on by default and default-deny. Whether it does anything depends
+on the CNI: kind's ignores NetworkPolicy, Calico and Cilium enforce it. So the
+rules are exercised against Calico on every pull request, including a check that
+an unlabelled pod cannot reach the services and a control proving it can once
+the policy is removed — otherwise "blocked" might only mean a wrong port.
+
 What a namespace does *not* isolate is node resources. One environment can starve
 another on a busy cluster. That is why every namespace now carries a
 `ResourceQuota` and a `LimitRange`, summed from what the release declares — a pod

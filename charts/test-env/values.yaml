@@ -310,4 +310,16 @@ podAnnotations: {}
 # Off by default because kind ships without a policy-enforcing CNI, so enabling
 # it there would give a false sense of security rather than actual isolation.
 networkPolicy:
-  enabled: false
+  # On by default. Whether it does anything depends on the CNI: kind's default
+  # ignores NetworkPolicy, Calico and Cilium enforce it. The rules are exercised
+  # against Calico on every pull request, including a check that an unlabelled
+  # pod is refused and a control proving it is reachable without them — see
+  # the "NetworkPolicy is enforced" job.
+  enabled: true
+  # The aggregator waits for the shard Job through the Kubernetes API, and the
+  # self-destruct Job deletes its own namespace through it. That destination has
+  # no pod label to select — it is reached through a Service whose ClusterIP is
+  # translated to an address outside the pod network — so it is an ipBlock,
+  # narrowed to the ports an API server listens on rather than to an address the
+  # chart cannot know. Set this where the address is known.
+  apiServerCidr: 0.0.0.0/0

@@ -27,7 +27,7 @@ difference between a decision and an oversight:
 |---|---|---|
 | `notes-service` holds the JWT signing secret, so it *could* mint tokens | Shared-secret HS256 instead of JWKS; both services are in one trust boundary and deploy together | [ADR 0003](docs/adr/0003-shared-secret-jwt.md) |
 | scrypt cost lowered from 2^14 to 2^12 in environments | Throwaway accounts; the application default stays 14 and production refuses to start without an explicit secret | [ADR 0005](docs/adr/0005-test-tuned-kdf-cost.md) |
-| `networkPolicy.enabled: false` by default | kind's CNI does not enforce NetworkPolicy — shipping it on would look like isolation while enforcing nothing | `values.yaml` |
+| NetworkPolicy is inert on kind | The default CNI ignores it. The rules themselves are enforced and tested against Calico on every pull request | `.github/workflows/ci.yml` |
 | No TLS between services | Everything is inside one namespace on a throwaway cluster; a service mesh would be scope well beyond the point | — |
 | No rate limiting | No untrusted callers exist | — |
 
