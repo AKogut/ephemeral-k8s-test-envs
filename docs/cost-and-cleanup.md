@@ -144,10 +144,11 @@ history — the only fleet this project has, since no environment outlives the
 run that made it:
 
 ```
-| Environments stood up          | 11     |
-| Teardown proved                | 11     |
-| Self-destruct proved           | 1      |
-| Median environment lifetime    | 1m 31s |
+| Environments stood up          | 13     |
+| Teardown proved                | 13     |
+| Self-destruct proved           | 2      |
+| Never reached the check        | 2      |
+| Median environment lifetime    | 1m 30s |
 | Longest                        | 1m 37s |
 ```
 
@@ -155,6 +156,13 @@ It goes red on a **broken guarantee** — an environment never proved gone, a
 self-destruct that failed, a lifetime far enough out to mean something changed
 — and not on a run that was merely slower. A report that turns red because a
 runner had a bad day is a report people learn to ignore.
+
+That third row exists because the first scheduled run got this wrong. It went
+red on *"1 run failed to prove the self-destruct layer fires"*, which was true
+of the job and false of the guarantee: the job had died on `docker pull …
+denied` before reaching a single assertion. A run that never got to the check
+is now counted separately and shown as `?`, and it is never fatal — the report
+reads the assertion step rather than the job's conclusion.
 
 Run it against any window by hand:
 

@@ -38,6 +38,14 @@ function environmentJob(overrides: Partial<ApiJob> = {}): ApiJob {
   };
 }
 
+function selfDestructJob(conclusion = 'success'): ApiJob {
+  return {
+    name: SELF_DESTRUCT_JOB,
+    conclusion,
+    steps: [{ name: 'And it left nothing cluster-scoped behind', conclusion }],
+  };
+}
+
 const RUN: ApiRun = {
   id: 31509283582,
   event: 'push',
@@ -132,10 +140,7 @@ describe('stepOutcome', () => {
 
 describe('runReport', () => {
   it('reads the lifetime, the teardown proof and the self-destruct job', () => {
-    const report = runReport(RUN, [
-      environmentJob(),
-      { name: SELF_DESTRUCT_JOB, conclusion: 'success' },
-    ]);
+    const report = runReport(RUN, [environmentJob(), selfDestructJob()]);
 
     assert.equal(report.id, RUN.id);
     assert.equal(report.branch, 'main');
@@ -149,21 +154,57 @@ describe('runReport', () => {
     assert.equal(report.selfDestruct, 'absent');
   });
 
-  it('distinguishes a skipped self-destruct job from a failed one', () => {
-    assert.equal(
-      runReport(RUN, [{ name: SELF_DESTRUCT_JOB, conclusion: 'skipped' }]).selfDestruct,
-      'skipped',
-    );
-    assert.equal(
-      runReport(RUN, [{ name: SELF_DESTRUCT_JOB, conclusion: 'failure' }]).selfDestruct,
-      'failure',
-    );
+  it('calls a job that never reached its assertion unproven, not failed', () => {
+    // The first scheduled run went red on exactly this: the job died on
+    // `docker pull … denied` before asserting anything. A registry hiccup is
+    // not a broken guarantee.
+    const report = runReport(RUN, [
+      environmentJob(),
+      {
+        name: SELF_DESTRUCT_JOB,
+        conclusion: 'failure',
+        steps: [
+          { name: 'Put the images into the cluster', conclusion: 'failure' },
+          { name: 'And it left nothing cluster-scoped behind', conclusion: 'skipped' },
+        ],
+      },
+    ]);
+    assert.equal(report.selfDestruct, 'unproven');
+  });
+
+  it('reads the assertion itself, both ways', () => {
+    const withProof = (conclusion: string) =>
+      runReport(RUN, [
+        environmentJob(),
+        {
+          name: SELF_DESTRUCT_JOB,
+          conclusion,
+          steps: [{ name: 'And it left nothing cluster-scoped behind', conclusion }],
+        },
+      ]).selfDestruct;
+
+    assert.equal(withProof('success'), 'success');
+    assert.equal(withProof('failure'), 'failure');
+  });
+
+  it('does not credit teardown on a run that never deployed anything', () => {
+    // The proof step runs `if: always()`, so with no environment it passes by
+    // having nothing to find.
+    const report = runReport(RUN, [
+      {
+        name: ENVIRONMENT_JOB,
+        conclusion: 'failure',
+        steps: [{ name: 'Prove the environment is gone', conclusion: 'success' }],
+      },
+    ]);
+    assert.equal(report.lifetimeMs, undefined);
+    assert.equal(report.teardown, 'unproven');
   });
 
   it('handles a run with no environment job and no branch', () => {
     const report = runReport({ ...RUN, head_branch: null, conclusion: null }, []);
     assert.equal(report.lifetimeMs, undefined);
-    assert.equal(report.teardown, 'absent');
+    assert.equal(report.teardown, 'unproven');
     assert.equal(report.branch, '(unknown)');
     assert.equal(report.conclusion, 'unknown');
   });
@@ -182,7 +223,7 @@ describe('median', () => {
 
 describe('summarise', () => {
   const reports = [
-    runReport(RUN, [environmentJob(), { name: SELF_DESTRUCT_JOB, conclusion: 'success' }]),
+    runReport(RUN, [environmentJob(), selfDestructJob()]),
     runReport({ ...RUN, id: 2 }, [
       environmentJob({
         steps: [
@@ -228,9 +269,7 @@ describe('summarise', () => {
 });
 
 describe('regressions', () => {
-  const clean = summarise([
-    runReport(RUN, [environmentJob(), { name: SELF_DESTRUCT_JOB, conclusion: 'success' }]),
-  ]);
+  const clean = summarise([runReport(RUN, [environmentJob(), selfDestructJob()])]);
 
   it('says nothing when every guarantee held', () => {
     assert.deepEqual(regressions(clean, { maxLifetimeMs: 900_000 }), []);
@@ -258,9 +297,7 @@ describe('regressions', () => {
   });
 
   it('fires on a failed self-destruct job', () => {
-    const summary = summarise([
-      runReport(RUN, [environmentJob(), { name: SELF_DESTRUCT_JOB, conclusion: 'failure' }]),
-    ]);
+    const summary = summarise([runReport(RUN, [environmentJob(), selfDestructJob('failure')])]);
     assert.deepEqual(regressions(summary, { maxLifetimeMs: 900_000 }), [
       '1 run(s) failed to prove the self-destruct layer fires',
     ]);
@@ -290,7 +327,7 @@ describe('formatDuration', () => {
 describe('renderReport', () => {
   it('puts the verdict above the detail, and says what the marks mean', () => {
     const reports = [
-      runReport(RUN, [environmentJob(), { name: SELF_DESTRUCT_JOB, conclusion: 'success' }]),
+      runReport(RUN, [environmentJob(), selfDestructJob()]),
       runReport({ ...RUN, id: 2 }, []),
     ];
     const rendered = renderReport(summarise(reports), reports);
@@ -299,7 +336,7 @@ describe('renderReport', () => {
     assert.match(rendered, /\| Median environment lifetime \| 1m 34s \|/);
     assert.match(rendered, /\| 31509283582 \| `main` \| 1m 34s \| ✓ \| ✓ \|/);
     // The run with no environment: nothing measured, nothing claimed.
-    assert.match(rendered, /\| 2 \| `main` \| – \| · \| · \|/);
+    assert.match(rendered, /\| 2 \| `main` \| – \| \? \| · \|/);
     assert.match(rendered, /the check did not exist yet/);
   });
 
@@ -307,9 +344,20 @@ describe('renderReport', () => {
     const reports = [
       runReport(RUN, [
         environmentJob({
-          steps: [{ name: 'Prove the environment is gone', conclusion: 'failure' }],
+          steps: [
+            {
+              name: 'Deploy the environment',
+              conclusion: 'success',
+              started_at: '2026-08-11T15:56:21Z',
+            },
+            {
+              name: 'Prove the environment is gone',
+              conclusion: 'failure',
+              completed_at: '2026-08-11T15:57:55Z',
+            },
+          ],
         }),
-        { name: SELF_DESTRUCT_JOB, conclusion: 'failure' },
+        selfDestructJob('failure'),
       ]),
     ];
     const rendered = renderReport(summarise(reports), reports);
