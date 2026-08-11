@@ -12,6 +12,7 @@ import {
   renderReport,
   runReport,
   SELF_DESTRUCT_JOB,
+  shardBalance,
   stepOutcome,
   summarise,
 } from './fleet.js';
@@ -210,6 +211,50 @@ describe('runReport', () => {
   });
 });
 
+describe('shardBalance', () => {
+  it('measures the share of the parallel window that sat idle', () => {
+    // Four shards, the slowest 10s: the run costs 10s and 25% of that window
+    // was spent with shards already finished.
+    const balance = shardBalance({
+      shards: [
+        { durationMs: 10_000 },
+        { durationMs: 8_000 },
+        { durationMs: 6_000 },
+        { durationMs: 6_000 },
+      ],
+    })!;
+    assert.equal(balance.shards, 4);
+    assert.equal(balance.slowestMs, 10_000);
+    assert.equal(balance.fastestMs, 6_000);
+    assert.equal(balance.wastedPercent, 25);
+  });
+
+  it('is zero when every shard finishes together', () => {
+    assert.equal(
+      shardBalance({ shards: [{ durationMs: 5_000 }, { durationMs: 5_000 }] })?.wastedPercent,
+      0,
+    );
+  });
+
+  it('says nothing rather than something wrong when there is nothing to compare', () => {
+    // One shard is not a balance, and a missing artifact must not read as a
+    // perfectly balanced run.
+    assert.equal(shardBalance({ shards: [{ durationMs: 5_000 }] }), undefined);
+    assert.equal(shardBalance({ shards: [] }), undefined);
+    assert.equal(shardBalance({}), undefined);
+    assert.equal(shardBalance(null), undefined);
+  });
+
+  it('ignores shards with no usable duration', () => {
+    assert.equal(
+      shardBalance({
+        shards: [{ durationMs: 4_000 }, { durationMs: 0 }, { durationMs: 8_000 }],
+      })?.shards,
+      2,
+    );
+  });
+});
+
 describe('median', () => {
   it('is undefined for nothing', () => {
     assert.equal(median([]), undefined);
@@ -327,16 +372,23 @@ describe('formatDuration', () => {
 describe('renderReport', () => {
   it('puts the verdict above the detail, and says what the marks mean', () => {
     const reports = [
-      runReport(RUN, [environmentJob(), selfDestructJob()]),
+      runReport(RUN, [environmentJob(), selfDestructJob()], {
+        shards: 4,
+        slowestMs: 10_000,
+        fastestMs: 6_000,
+        wastedPercent: 25,
+      }),
       runReport({ ...RUN, id: 2 }, []),
     ];
     const rendered = renderReport(summarise(reports), reports);
 
     assert.match(rendered, /## Fleet/);
     assert.match(rendered, /\| Median environment lifetime \| 1m 34s \|/);
-    assert.match(rendered, /\| 31509283582 \| `main` \| 1m 34s \| ✓ \| ✓ \|/);
-    // The run with no environment: nothing measured, nothing claimed.
-    assert.match(rendered, /\| 2 \| `main` \| – \| \? \| · \|/);
+    assert.match(rendered, /\| 31509283582 \| `main` \| 1m 34s \| ✓ \| ✓ \| 25% \|/);
+    assert.match(rendered, /\| Median shard time wasted on imbalance \| 25% \|/);
+    // The run with no environment, and one whose artifact has expired:
+    // nothing measured, nothing claimed.
+    assert.match(rendered, /\| 2 \| `main` \| – \| \? \| · \| – \|/);
     assert.match(rendered, /the check did not exist yet/);
   });
 

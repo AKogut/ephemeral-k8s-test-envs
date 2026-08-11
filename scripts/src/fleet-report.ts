@@ -21,8 +21,11 @@ import {
   renderReport,
   type RunReport,
   runReport,
+  type ShardBalance,
+  shardBalance,
   summarise,
 } from './fleet.js';
+import { extractFile } from './zip.js';
 
 const USAGE = `
 Usage: fleet-report [options]
@@ -33,6 +36,7 @@ Usage: fleet-report [options]
   --runs <n>            How many runs to read       (default: 20)
   --max-lifetime <s>    Fail above this lifetime    (default: 900)
   --output <path>       Also write the report here
+  --no-artifacts        Skip the shard-balance numbers, which need a download
   --help
 `.trim();
 
@@ -49,6 +53,43 @@ async function api<T>(url: string, token: string): Promise<T> {
     throw new Error(`GET ${url} failed: ${response.status} ${await response.text()}`);
   }
   return (await response.json()) as T;
+}
+
+interface ApiArtifact {
+  name: string;
+  expired: boolean;
+  archive_download_url: string;
+}
+
+/**
+ * The shard timings for one run, out of the artifact it uploaded.
+ *
+ * Best-effort by design: artifacts expire after two weeks, a run may have
+ * failed before producing one, and neither is a problem worth failing a report
+ * over. What it must not do is guess — a missing artifact is reported as
+ * missing, never as a balanced run.
+ */
+async function balanceOf(base: string, runId: number, token: string): Promise<ShardBalance | undefined> {
+  const listed = await api<{ artifacts: ApiArtifact[] }>(
+    `${base}/actions/runs/${runId}/artifacts`,
+    token,
+  );
+  const artifact = listed.artifacts.find(
+    (candidate) => candidate.name.startsWith('test-results-') && !candidate.expired,
+  );
+  if (!artifact) return undefined;
+
+  const response = await fetch(artifact.archive_download_url, {
+    headers: { accept: 'application/vnd.github+json', authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!response.ok) return undefined;
+
+  const zip = Buffer.from(await response.arrayBuffer());
+  const summary = extractFile(zip, 'merged/summary.json');
+  if (!summary) return undefined;
+
+  return shardBalance(JSON.parse(summary.toString('utf8')));
 }
 
 async function main(): Promise<number> {
@@ -78,13 +119,20 @@ async function main(): Promise<number> {
     token,
   );
 
+  const withArtifacts = args['no-artifacts'] !== true;
+
   const reports: RunReport[] = [];
   for (const run of runs.workflow_runs) {
     const jobs = await api<{ jobs: ApiJob[] }>(
       `${base}/actions/runs/${run.id}/jobs?per_page=100`,
       token,
     );
-    reports.push(runReport(run, jobs.jobs));
+    // A failure here is not worth losing the rest of the report to: the
+    // teardown numbers come from the jobs and do not need the download.
+    const balance = withArtifacts
+      ? await balanceOf(base, run.id, token).catch(() => undefined)
+      : undefined;
+    reports.push(runReport(run, jobs.jobs, balance));
   }
 
   const summary = summarise(reports);
