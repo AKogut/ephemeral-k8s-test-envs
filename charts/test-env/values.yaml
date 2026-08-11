@@ -232,6 +232,35 @@ aggregator:
       cpu: 500m
       memory: 256Mi
 
+# ------------------------------------------------------------- resource quota --
+
+# -- A ceiling on what one environment may take from a shared cluster.
+#
+# Per-pod limits stop one container running away; they say nothing about the
+# total. `tests.shards` is a value, and 32 shard pods install perfectly happily —
+# the pods left Pending are then somebody else's pull request. See issue #83.
+#
+# The quota is summed from what the release actually declares, so raising the
+# shard count raises the quota with it rather than colliding with it.
+resourceQuota:
+  enabled: true
+  # Applied to the computed CPU and memory totals. Covers rounding, a rolling
+  # update overlapping two pods, and a Job retry.
+  headroomPercent: 20
+  # Extra pods on top of the count the release declares, for the same reasons.
+  podHeadroom: 4
+  # Used by the LimitRange for containers that declare nothing. Nothing in this
+  # chart relies on them — with a quota in force, a pod without requests is
+  # rejected outright, so these exist to keep the next workload from failing in
+  # a way that reads as a quota problem rather than a missing resources block.
+  containerDefaults:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
 # ------------------------------------------------------------------ teardown --
 
 teardown:

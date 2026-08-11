@@ -24,9 +24,10 @@ minutes and money per environment. A namespace gives you isolated names, RBAC,
 quotas and — with a NetworkPolicy — traffic, in milliseconds and for free.
 
 What a namespace does *not* isolate is node resources. One environment can starve
-another on a busy cluster. The answer there is a `ResourceQuota` and a
-`LimitRange` per namespace, which is noted as the first thing to add the day this
-runs anywhere shared.
+another on a busy cluster. That is why every namespace now carries a
+`ResourceQuota` and a `LimitRange`, summed from what the release declares — a pod
+asking for more than the environment has left is refused by the API server rather
+than left Pending somewhere else.
 
 ## Why is the application so small? It barely does anything.
 
@@ -181,8 +182,8 @@ In order of what actually changes the answer to "could a team use this":
    single-machine number.
 2. **[A run on a managed cluster](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/86)**
    — turns "no provider dependency" from an argument into a result.
-3. **[Per-namespace `ResourceQuota`](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/83)**
-   — so one runaway environment cannot starve a shared cluster.
+3. **[A preview URL per environment](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/84)**
+   — the piece that makes these useful to people who are not running the tests.
 4. **[A preview URL per environment](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/84)**
    — the piece that makes these useful to people who are not running the tests.
 

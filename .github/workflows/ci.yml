@@ -76,6 +76,34 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: The quota tracks the shard count
+        run: |
+          # A quota that does not move with tests.shards is worse than none: it
+          # would reject the pods it was sized before anyone changed the value,
+          # and report that as a Pending pod rather than as a stale number.
+          previous=0
+          for shards in 1 4 16; do
+            # `requests.cpu:` is spelled that way only inside a ResourceQuota —
+            # a pod spec nests plain `cpu:` under `resources:` — so the first
+            # match is the quota's own figure.
+            cpu=$(helm template ci charts/test-env --set "tests.shards=$shards" \
+              | grep -m1 'requests\.cpu:' | tr -dc '0-9')
+            echo "shards=$shards -> requests.cpu=${cpu}m"
+            if [ "$cpu" -le "$previous" ]; then
+              echo "::error::the quota did not grow between shard counts ($previous -> $cpu)"
+              exit 1
+            fi
+            previous=$cpu
+          done
+
+          # An unreadable quantity must fail the render rather than count as zero,
+          # which would produce a quota that looks like protection and is not.
+          if helm template ci charts/test-env --set 'tests.resources.requests.cpu=1.5' >/dev/null 2>&1; then
+            echo "::error::a CPU quantity the chart cannot parse was accepted"
+            exit 1
+          fi
+          echo "confirmed: an unparseable quantity is rejected at render time"
+
       - name: No shared volume survives anywhere in the chart
         run: |
           # The property the whole design rests on, asserted rather than
@@ -791,6 +819,32 @@ jobs:
               --tail=100 || echo "(no logs for shard $index)"
             echo "::endgroup::"
           done
+
+      - name: The quota actually refuses something
+        run: |
+          # A ResourceQuota that is merely present proves nothing. This asks the
+          # API server to admit a pod far larger than the environment's ceiling
+          # and requires it to say no — the difference between a namespace that
+          # is bounded and one that has a bounded-looking object in it.
+          ns="${{ steps.env.outputs.namespace }}"
+
+          kubectl -n "$ns" describe resourcequota | sed -n '/Resource/,$p'
+
+          if kubectl -n "$ns" run quota-probe --image=busybox:1.36 --restart=Never \
+              --overrides='{"spec":{"containers":[{"name":"p","image":"busybox:1.36","command":["true"],"resources":{"requests":{"cpu":"64","memory":"64Mi"},"limits":{"cpu":"64","memory":"64Mi"}}}]}}' \
+              >/dev/null 2>&1; then
+            echo "::error::the namespace accepted a 64-core pod — the quota is not being enforced"
+            kubectl -n "$ns" delete pod quota-probe --ignore-not-found
+            exit 1
+          fi
+          echo "confirmed: a pod beyond the ceiling is refused"
+
+          # And a pod that declares nothing must be given defaults rather than
+          # rejected, which is the LimitRange's entire job.
+          kubectl -n "$ns" run limit-probe --image=busybox:1.36 --restart=Never --command -- true
+          kubectl -n "$ns" get pod limit-probe \
+            -o jsonpath='{.spec.containers[0].resources}{"\n"}'
+          kubectl -n "$ns" delete pod limit-probe --ignore-not-found >/dev/null
 
       - name: The shards actually spread across the cluster
         run: |

@@ -228,6 +228,85 @@ missing results rather than like a configuration mistake.
       key: secret-access-key
 {{- end -}}
 
+{{/*
+Quantity parsing, so the quota can be computed rather than guessed.
+
+Both are deliberately strict: an unrecognised unit fails the render instead of
+being read as zero. A quota that silently under-counts is worse than no quota,
+because it looks like protection and blocks pods for reasons nobody can trace.
+*/}}
+{{- define "test-env.milli" -}}
+{{- $v := . | toString -}}
+{{- if regexMatch "^[0-9]+m$" $v -}}
+{{- trimSuffix "m" $v | int -}}
+{{- else if regexMatch "^[0-9]+$" $v -}}
+{{- mul ($v | int) 1000 -}}
+{{- else -}}
+{{- fail (printf "cannot read %q as a CPU quantity — use millicores (\"250m\") or whole cores (\"2\")" $v) -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "test-env.mebi" -}}
+{{- $v := . | toString -}}
+{{- if regexMatch "^[0-9]+Mi$" $v -}}
+{{- trimSuffix "Mi" $v | int -}}
+{{- else if regexMatch "^[0-9]+Gi$" $v -}}
+{{- mul (trimSuffix "Gi" $v | int) 1024 -}}
+{{- else -}}
+{{- fail (printf "cannot read %q as a memory quantity — use Mi or Gi, whole numbers only" $v) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+What this environment is entitled to, summed from what it actually declares.
+
+Computed rather than configured, so raising tests.shards raises the quota with
+it. A hard-coded number would drift the moment anyone changed a replica count,
+and the failure would arrive as a Pending pod rather than as a wrong value.
+
+Returns JSON; call sites do `include ... | fromJson`.
+*/}}
+{{- define "test-env.quotaTotals" -}}
+{{- $reqCpu := 0 -}}{{- $reqMem := 0 -}}{{- $limCpu := 0 -}}{{- $limMem := 0 -}}{{- $pods := 0 -}}
+
+{{- $workloads := list
+      (dict "count" (int .Values.gateway.replicaCount) "res" .Values.gateway.resources)
+      (dict "count" (int .Values.auth.replicaCount)    "res" .Values.auth.resources)
+      (dict "count" (int .Values.notes.replicaCount)   "res" .Values.notes.resources)
+-}}
+{{- if .Values.minio.enabled -}}
+{{- $workloads = append $workloads (dict "count" 1 "res" .Values.minio.resources) -}}
+{{- end -}}
+{{- if .Values.tests.enabled -}}
+{{- $workloads = append $workloads (dict "count" (int .Values.tests.shards) "res" .Values.tests.resources) -}}
+{{- if .Values.aggregator.enabled -}}
+{{- $workloads = append $workloads (dict "count" 1 "res" .Values.aggregator.resources) -}}
+{{- end -}}
+{{- end -}}
+{{- if .Values.teardown.selfDestruct.enabled -}}
+{{- $workloads = append $workloads (dict "count" 1 "res" .Values.teardown.selfDestruct.resources) -}}
+{{- end -}}
+
+{{- range $w := $workloads -}}
+{{- $n := $w.count -}}
+{{- $pods = add $pods $n -}}
+{{- $reqCpu = add $reqCpu (mul $n (include "test-env.milli" $w.res.requests.cpu | int)) -}}
+{{- $reqMem = add $reqMem (mul $n (include "test-env.mebi"  $w.res.requests.memory | int)) -}}
+{{- $limCpu = add $limCpu (mul $n (include "test-env.milli" $w.res.limits.cpu | int)) -}}
+{{- $limMem = add $limMem (mul $n (include "test-env.mebi"  $w.res.limits.memory | int)) -}}
+{{- end -}}
+
+{{- $headroom := int .Values.resourceQuota.headroomPercent -}}
+{{- dict
+      "requestsCpu" (div (mul $reqCpu (add 100 $headroom)) 100)
+      "requestsMem" (div (mul $reqMem (add 100 $headroom)) 100)
+      "limitsCpu"   (div (mul $limCpu (add 100 $headroom)) 100)
+      "limitsMem"   (div (mul $limMem (add 100 $headroom)) 100)
+      "pods"        (add $pods (int .Values.resourceQuota.podHeadroom))
+      "rawPods"     $pods
+   | toJson -}}
+{{- end -}}
+
 {{/* Validation that fails the render rather than the rollout. */}}
 {{- define "test-env.validate" -}}
 {{- if and .Values.tests.enabled (not .Values.minio.enabled) (not .Values.tests.results.s3.endpoint) -}}

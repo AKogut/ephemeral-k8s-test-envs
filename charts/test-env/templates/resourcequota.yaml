@@ -1,0 +1,55 @@
+{{- if .Values.resourceQuota.enabled }}
+{{- $q := include "test-env.quotaTotals" . | fromJson }}
+{{/*
+A ceiling on what one environment may take from a shared cluster.
+
+Per-pod limits already stop one container running away. They do nothing about
+one *environment* claiming an unbounded share, because nothing caps the total —
+and `tests.shards` is a value anyone can raise. Thirty-two shard pods render and
+install perfectly happily; the pods that end up Pending are then somebody else's
+pull request, and the person debugging it did not write the change that broke it.
+
+The numbers are summed from what this release actually declares, so raising the
+shard count raises the quota with it. That is the point: a hard-coded quota
+drifts the moment a replica count changes, and reports the drift as a Pending
+pod.
+*/}}
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: {{ include "test-env.fullname" . }}
+  labels:
+    {{- include "test-env.labels" . | nindent 4 }}
+spec:
+  hard:
+    requests.cpu: {{ printf "%dm" (int $q.requestsCpu) | quote }}
+    requests.memory: {{ printf "%dMi" (int $q.requestsMem) | quote }}
+    limits.cpu: {{ printf "%dm" (int $q.limitsCpu) | quote }}
+    limits.memory: {{ printf "%dMi" (int $q.limitsMem) | quote }}
+    # Headroom on top of the {{ $q.rawPods }} this release declares, because a
+    # rolling update runs the old and new pod at once and a Job may retry.
+    pods: {{ int $q.pods | quote }}
+---
+{{/*
+Defaults for anything added later without resources of its own.
+
+With a ResourceQuota on requests and limits, Kubernetes rejects any pod that
+does not set them — so a workload added to this chart without a resources block
+would fail to schedule with a message about quota rather than about itself.
+Every pod here declares its own; this exists so the next one cannot slip through
+uncounted.
+*/}}
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: {{ include "test-env.fullname" . }}
+  labels:
+    {{- include "test-env.labels" . | nindent 4 }}
+spec:
+  limits:
+    - type: Container
+      default:
+        {{- toYaml .Values.resourceQuota.containerDefaults.limits | nindent 8 }}
+      defaultRequest:
+        {{- toYaml .Values.resourceQuota.containerDefaults.requests | nindent 8 }}
+{{- end }}
