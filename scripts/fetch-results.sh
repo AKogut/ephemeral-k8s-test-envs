@@ -47,6 +47,12 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 
+# Downloads are additive, so a reused output directory quietly ends up holding
+# several runs at once. Anything derived from it afterwards — weights, in
+# particular — is then inflated by however many runs were in there, which is a
+# wrong number that looks entirely plausible.
+rm -rf "${OUTPUT:?}/merged"
+
 SYNC_CLI="$(dirname "${BASH_SOURCE[0]}")/dist/sync-results.js"
 if [[ ! -f "$SYNC_CLI" ]]; then
   warn "scripts/dist is not built — run: npm --prefix scripts run build"

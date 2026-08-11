@@ -124,17 +124,17 @@ round-robin by file count — because a run is only as fast as its slowest shard
 $ npm run shard:plan
 
 Shard plan: 11 files across 4 shards
-Ideal weight per shard: 12.22 | makespan: 12.50 | balance: 97.8%
+Ideal weight per shard: 8.34 | makespan: 8.65 | balance: 96.4%
 
-  shard 0: 2 file(s), weight 11.90     ← two files, not three
-      - auth-me.spec.ts
-      - user-journey.spec.ts           ← the 9.5s file gets a shard nearly to itself
-  shard 1: 3 file(s), weight 12.50
-  shard 2: 3 file(s), weight 12.40
-  shard 3: 3 file(s), weight 12.10
+  shard 0: 2 file(s), weight 7.98      ← two files, not three
+      - auth-login.spec.ts
+      - user-journey.spec.ts           ← the 5.6s file gets a shard nearly to itself
+  shard 1: 3 file(s), weight 8.56
+  shard 2: 3 file(s), weight 8.65
+  shard 3: 3 file(s), weight 8.16
 ```
 
-97.8% of a perfect split. Assigning files to minimise the slowest shard is
+96.4% of a perfect split. Assigning files to minimise the slowest shard is
 multiway number partitioning — NP-hard — and LPT is guaranteed within
 4/3 − 1/(3k) of optimal. **The unit tests assert that bound directly**, along with
 completeness, determinism across input permutations, and that the plan beats
