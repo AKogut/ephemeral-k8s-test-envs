@@ -1112,15 +1112,22 @@ jobs:
             --command -- sleep 300
           kubectl -n "$NS" wait --for=condition=ready pod/apiprobe --timeout=120s
 
-          gw="http://pgenv-test-env-gateway:3000"
+          # Read from the Service rather than assumed. The gateway listens on
+          # 3000 in the container and the Service publishes 80, and taking the
+          # container's port here cost a run: every request sat until curl's
+          # own timeout, 134 seconds each.
+          port=$(kubectl -n "$NS" get svc pgenv-test-env-gateway -o jsonpath='{.spec.ports[0].port}')
+          gw="http://pgenv-test-env-gateway:$port"
+          echo "probing $gw"
+
           ok=0
           for i in 1 2 3 4 5; do
             email="replica-probe-$i@example.test"
             body="{\"email\":\"$email\",\"password\":\"correct-horse-battery-staple\"}"
-            kubectl -n "$NS" exec apiprobe -- curl -fsS -X POST "$gw/auth/register" \
+            kubectl -n "$NS" exec apiprobe -- curl -fsS --max-time 10 -X POST "$gw/auth/register" \
               -H 'content-type: application/json' -d "$body" >/dev/null
             for _ in 1 2 3 4; do
-              if kubectl -n "$NS" exec apiprobe -- curl -fsS -X POST "$gw/auth/login" \
+              if kubectl -n "$NS" exec apiprobe -- curl -fsS --max-time 10 -X POST "$gw/auth/login" \
                 -H 'content-type: application/json' -d "$body" >/dev/null; then
                 ok=$((ok + 1))
               fi
