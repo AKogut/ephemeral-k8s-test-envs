@@ -20,7 +20,7 @@ export interface Config {
   readonly port: number;
   readonly nodeEnv: string;
   readonly envId: string;
-  readonly databasePath: string;
+  readonly database: DatabaseConfig;
   readonly jwt: {
     readonly secret: string;
     readonly issuer: string;
@@ -37,6 +37,51 @@ export interface Config {
 }
 
 const DEV_JWT_SECRET = 'dev-only-insecure-secret-change-me';
+
+/**
+ * Which store backs the service.
+ *
+ * `sqlite` keeps the database in the pod, which is why both data services are
+ * pinned to one replica (ADR 0006). `postgres` puts it a network away, which
+ * is what makes a second replica possible and a migration necessary.
+ */
+export type DatabaseBackend = 'sqlite' | 'postgres';
+
+export interface DatabaseConfig {
+  readonly backend: DatabaseBackend;
+  /** sqlite only. */
+  readonly path: string;
+  /** postgres only. */
+  readonly url: string;
+  readonly poolSize: number;
+  readonly connectTimeoutMs: number;
+}
+
+const BACKENDS: readonly DatabaseBackend[] = ['sqlite', 'postgres'];
+
+function databaseFromEnv(env: NodeJS.ProcessEnv): DatabaseConfig {
+  const backend = (env.DB_BACKEND ?? 'sqlite') as DatabaseBackend;
+
+  // Named explicitly rather than inferred from whether DATABASE_URL is set. A
+  // misspelled variable would then mean "quietly use SQLite", and the symptom
+  // is an environment that works, passes, and is not testing what it claims.
+  if (!BACKENDS.includes(backend)) {
+    throw new Error(`DB_BACKEND must be one of ${BACKENDS.join(', ')}, received "${backend}"`);
+  }
+
+  const url = env.DATABASE_URL ?? '';
+  if (backend === 'postgres' && url === '') {
+    throw new Error('DATABASE_URL must be set when DB_BACKEND=postgres');
+  }
+
+  return {
+    backend,
+    path: env.DATABASE_PATH ?? ':memory:',
+    url,
+    poolSize: intFromEnv('DB_POOL_SIZE', 10, env),
+    connectTimeoutMs: intFromEnv('DB_CONNECT_TIMEOUT_MS', 5_000, env),
+  };
+}
 
 function intFromEnv(name: string, fallback: number, env: NodeJS.ProcessEnv): number {
   const raw = env[name];
@@ -75,7 +120,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     port: intFromEnv('PORT', 3002, env),
     nodeEnv,
     envId: env.ENV_ID ?? 'local',
-    databasePath: env.DATABASE_PATH ?? ':memory:',
+    database: databaseFromEnv(env),
     jwt: {
       secret: secret === '' ? DEV_JWT_SECRET : secret,
       issuer: env.JWT_ISSUER ?? 'ephemeral-test-envs/auth-service',

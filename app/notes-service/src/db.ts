@@ -1,6 +1,8 @@
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import type { Config } from './config.js';
+import { openPostgresNoteStore } from './db-postgres.js';
 
 export interface NoteRow {
   id: string;
@@ -107,7 +109,14 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-export function openNoteStore(databasePath: string): NoteStore {
+/** Picks the backend named in the config. */
+export function openNoteStore(config: Config): NoteStore {
+  return config.database.backend === 'postgres'
+    ? openPostgresNoteStore(config)
+    : openSqliteNoteStore(config.database.path);
+}
+
+export function openSqliteNoteStore(databasePath: string): NoteStore {
   if (databasePath !== ':memory:') {
     mkdirSync(dirname(databasePath), { recursive: true });
   }

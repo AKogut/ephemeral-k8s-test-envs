@@ -108,6 +108,14 @@ services:
       gateway:
         condition: service_healthy
     volumes:
+      # A bind mount, so the Allure results land somewhere a human can open
+      # them. It has to exist before the container starts: Docker creates a
+      # missing bind-mount source as root, the container runs as uid 1000, and
+      # the run dies on EACCES. `npm run compose:test` creates it first — see
+      # the comment on that script.
+      #
+      # On macOS none of that is visible, because Docker Desktop's file sharing
+      # maps ownership. On Linux it is fatal, which is where CI runs.
       - ./results:/results
 
 volumes:

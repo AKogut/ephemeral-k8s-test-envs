@@ -8,14 +8,14 @@ const logger = createLogger(config.logLevel, {
   service: config.serviceName,
   envId: config.envId,
 });
-const store = openUserStore(config.databasePath);
+const store = openUserStore(config);
 const app = createApp(store, config, logger);
 
 const server = app.listen(config.port, () => {
   logger.info('service started', {
     port: config.port,
     nodeEnv: config.nodeEnv,
-    databasePath: config.databasePath,
+    database: config.database.backend,
     scryptCostLog2: config.scryptCostLog2,
   });
 });

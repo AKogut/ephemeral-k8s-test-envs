@@ -1,6 +1,23 @@
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import type { Config } from './config.js';
+import { openPostgresUserStore } from './db-postgres.js';
+
+/**
+ * The unique index on the email decided, not the application.
+ *
+ * Both backends check "is this taken" before inserting, and both can lose that
+ * check to another request between the two statements — with Postgres and more
+ * than one replica, to another pod. The index is what actually resolves it, so
+ * its error is translated into something the route can answer 409 to.
+ */
+export class DuplicateEmailError extends Error {
+  constructor(email: string) {
+    super(`Email already registered: ${email}`);
+    this.name = 'DuplicateEmailError';
+  }
+}
 
 export interface UserRow {
   id: string;
@@ -45,7 +62,14 @@ const SCHEMA = `
   CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users (lower(email));
 `;
 
-export function openUserStore(databasePath: string): UserStore {
+/** Picks the backend named in the config. */
+export function openUserStore(config: Config): UserStore {
+  return config.database.backend === 'postgres'
+    ? openPostgresUserStore(config)
+    : openSqliteUserStore(config.database.path);
+}
+
+export function openSqliteUserStore(databasePath: string): UserStore {
   if (databasePath !== ':memory:') {
     mkdirSync(dirname(databasePath), { recursive: true });
   }
@@ -65,7 +89,22 @@ export function openUserStore(databasePath: string): UserStore {
   // claim a suspension point that does not exist.
   return {
     insert(user) {
-      insertStmt.run(user.id, user.email, user.password_hash, user.password_salt);
+      try {
+        insertStmt.run(user.id, user.email, user.password_hash, user.password_salt);
+      } catch (error) {
+        // Same translation as the Postgres backend, so the two answer a lost
+        // race identically. SQLite reports the index by name in `message`;
+        // the code is what is checked.
+        if (
+          typeof error === 'object' &&
+          error !== null &&
+          'code' in error &&
+          String(error.code).startsWith('SQLITE_CONSTRAINT')
+        ) {
+          throw new DuplicateEmailError(user.email);
+        }
+        throw error;
+      }
       return Promise.resolve(byIdStmt.get(user.id) as UserRow);
     },
     findByEmail(email) {

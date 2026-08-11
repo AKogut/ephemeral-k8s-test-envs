@@ -63,6 +63,24 @@ This is the quickest way to confirm a Dockerfile change works — a multi-stage
 build that compiles on your machine can still fail in a slim runtime stage
 because a native module or a file was left behind in the build stage.
 
+### …with the database a network away
+
+```bash
+npm run compose:postgres       # the same stack on Postgres, migrations first
+npm run compose:postgres:down
+```
+
+An overlay, so the default stays three containers and no database to wait for.
+It starts Postgres, creates one database per service, runs each service's
+migrations as a one-shot container, and only then starts the services — the
+same ordering the chart uses, for the reason given in
+[ADR 0008](adr/0008-networked-database-mode.md): a process that migrates its own
+database on boot has no answer for the second replica doing it at the same time.
+
+`DB_BACKEND` selects the backend and is validated; an unknown value refuses to
+boot rather than falling back to SQLite, because a silent fallback means an
+environment that passes without testing what it claims.
+
 ## 3. kind + Helm — the real thing
 
 ```bash
