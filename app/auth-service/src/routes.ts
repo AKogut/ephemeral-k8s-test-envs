@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
 import type { Config } from './config.js';
-import type { UserStore } from './db.js';
+import { DuplicateEmailError, type UserStore } from './db.js';
 import { ApiError } from './errors.js';
 import { asyncRoute } from './middleware.js';
 import { hashPassword, verifyPassword } from './passwords.js';
@@ -42,12 +42,25 @@ export function createAuthRouter(store: UserStore, config: Config): Router {
       }
 
       const { hash, salt } = await hashPassword(password, config.scryptCostLog2);
-      const user = await store.insert({
-        id: randomUUID(),
-        email,
-        password_hash: hash,
-        password_salt: salt,
-      });
+
+      // The check above can be lost between the two statements — to another
+      // request, and with Postgres to another replica. The unique index is
+      // what actually decides, so its verdict gets the same answer as the
+      // check's rather than becoming a 500.
+      let user;
+      try {
+        user = await store.insert({
+          id: randomUUID(),
+          email,
+          password_hash: hash,
+          password_salt: salt,
+        });
+      } catch (error) {
+        if (error instanceof DuplicateEmailError) {
+          throw ApiError.conflict('EMAIL_ALREADY_REGISTERED', 'That email is already registered');
+        }
+        throw error;
+      }
 
       req.log.info('user registered', { userId: user.id });
       res.status(201).json(publicUser(user));

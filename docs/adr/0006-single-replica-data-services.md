@@ -72,7 +72,13 @@ The chart is structured so this is a swap rather than a rewrite:
 3. Raise `replicaCount`; the services are otherwise already stateless.
 4. Add migrations as a `helm.sh/hook: pre-install,pre-upgrade` Job.
 
-Deliberately out of scope. It would add a database to seed, migrate, wait for and
+Deliberately out of scope **for the default**. That list is no longer
+hypothetical — it is what [ADR 0008](0008-networked-database-mode.md) implements,
+behind `DB_BACKEND=postgres`, with SQLite still the default for exactly the
+reasons argued here. What follows is why it is not what an environment does
+unless it is asked to.
+
+It adds a database to seed, migrate, wait for and
 tear down — and the subject of this project is the environment lifecycle, not the
 application's persistence layer. SQLite on an `emptyDir` gives a real database
 with real transactions, real constraints and real SQL, with nothing to operate.

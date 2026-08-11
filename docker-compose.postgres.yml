@@ -1,0 +1,79 @@
+# The same stack, with the database a network away instead of inside the pod.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.postgres.yml up --build -d --wait
+#
+# An overlay rather than a profile, so the default path stays exactly what it
+# was: `docker compose up` is still three services and no database to wait for.
+#
+# The interesting part is the ordering, and it is the same ordering the chart
+# uses. Neither service creates its own schema — a process that migrates on
+# boot has no answer for the second replica doing it at the same time — so the
+# migrations run first, as their own one-shot containers, and the services do
+# not start until those have exited successfully.
+
+services:
+  postgres:
+    # Pinned, because a database that changes under the suite would make an
+    # upstream release and a real regression look identical.
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: local-compose-password
+      # The maintenance database. Each service gets its own, created by the
+      # init script below — see the comment in it for why that is not a detail.
+      POSTGRES_DB: postgres
+    volumes:
+      # Shared with the chart rather than copied, so the two paths cannot drift.
+      - ./charts/test-env/files/postgres-init.sql:/docker-entrypoint-initdb.d/10-databases.sql:ro
+    healthcheck:
+      # `-U app` matters: without it pg_isready asks as root, which is not a
+      # role here, and reports the server as up before it can serve anyone.
+      test: ["CMD-SHELL", "pg_isready -U app -d postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 3s
+
+  auth-migrate:
+    build:
+      context: ./app/auth-service
+    command: ["node", "dist/migrate.js"]
+    environment:
+      NODE_ENV: production
+      JWT_SECRET: ${JWT_SECRET:-local-compose-secret}
+      DB_BACKEND: postgres
+      DATABASE_URL: postgres://app:local-compose-password@postgres:5432/auth
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  notes-migrate:
+    build:
+      context: ./app/notes-service
+    command: ["node", "dist/migrate.js"]
+    environment:
+      NODE_ENV: production
+      JWT_SECRET: ${JWT_SECRET:-local-compose-secret}
+      DB_BACKEND: postgres
+      DATABASE_URL: postgres://app:local-compose-password@postgres:5432/notes
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  auth-service:
+    environment:
+      DB_BACKEND: postgres
+      DATABASE_URL: postgres://app:local-compose-password@postgres:5432/auth
+    depends_on:
+      auth-migrate:
+        condition: service_completed_successfully
+
+  notes-service:
+    environment:
+      DB_BACKEND: postgres
+      DATABASE_URL: postgres://app:local-compose-password@postgres:5432/notes
+    depends_on:
+      notes-migrate:
+        condition: service_completed_successfully

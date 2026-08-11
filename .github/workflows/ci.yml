@@ -698,6 +698,92 @@ jobs:
         if: always()
         run: docker compose down -v
 
+  postgres:
+    name: docker compose stack on Postgres
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Start the stack with the database a network away
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.postgres.yml \
+            up --build -d --wait --wait-timeout 300
+
+      - name: The migrations ran, and ran before the services
+        run: |
+          set -euo pipefail
+          # Each service migrates its own database. If either had been left to
+          # create its schema on boot, this is where that would show up as
+          # nothing to see.
+          docker compose -f docker-compose.yml -f docker-compose.postgres.yml \
+            logs auth-migrate notes-migrate | grep -c 'migration applied'
+
+          for db in auth notes; do
+            echo "::group::$db"
+            docker compose -f docker-compose.yml -f docker-compose.postgres.yml \
+              exec -T postgres psql -U app -d "$db" -c '\dt'
+            docker compose -f docker-compose.yml -f docker-compose.postgres.yml \
+              exec -T postgres psql -U app -d "$db" -tAc 'SELECT id, name FROM schema_migrations ORDER BY id'
+            echo "::endgroup::"
+          done
+
+      - name: Running them again applies nothing
+        run: |
+          set -euo pipefail
+          # The property that makes a migration Job safe to retry, and the one
+          # the advisory lock exists for. A second run must find its work done
+          # rather than repeat it or fail.
+          out=$(docker compose -f docker-compose.yml -f docker-compose.postgres.yml \
+            run --rm auth-migrate 2>&1)
+          echo "$out"
+          echo "$out" | grep -q '"applied":0' \
+            || { echo "::error::a second migration run was not a no-op"; exit 1; }
+
+      - name: The whole suite passes against Postgres
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.postgres.yml \
+            --profile test run --rm api-tests
+
+      - name: Two replicas share one database
+        run: |
+          set -euo pipefail
+          # The point of the whole exercise, and something SQLite in the pod
+          # cannot do: register against whichever replica answers, then log in
+          # repeatedly and require every attempt to succeed. With per-pod
+          # storage roughly half of these would fail.
+          docker compose -f docker-compose.yml -f docker-compose.postgres.yml \
+            -f .github/compose/scale-auth.yml up -d --wait --wait-timeout 240 --scale auth-service=2
+
+          replicas=$(docker compose -f docker-compose.yml -f docker-compose.postgres.yml \
+            -f .github/compose/scale-auth.yml ps auth-service --format '{{.Name}}' | grep -c .)
+          [ "$replicas" = "2" ] || { echo "::error::expected 2 auth replicas, found $replicas"; exit 1; }
+
+          ok=0
+          for i in 1 2 3 4 5; do
+            email="replica-probe-$i@example.test"
+            curl -fsS -X POST localhost:3000/auth/register -H 'content-type: application/json' \
+              -d "{\"email\":\"$email\",\"password\":\"correct-horse-battery-staple\"}" >/dev/null
+            for _ in 1 2 3 4; do
+              if curl -fsS -X POST localhost:3000/auth/login -H 'content-type: application/json' \
+                -d "{\"email\":\"$email\",\"password\":\"correct-horse-battery-staple\"}" >/dev/null; then
+                ok=$((ok + 1))
+              fi
+            done
+          done
+
+          echo "$ok of 20 logins succeeded across 2 replicas"
+          [ "$ok" = "20" ] || { echo "::error::the replicas are not sharing state"; exit 1; }
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.postgres.yml logs --tail=80
+
+      - name: Tear down
+        if: always()
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.postgres.yml down -v
+
   # ------------------------------------------------------------------ build --
   # The five images the cluster jobs install, built once and delivered to them
   # by whichever route this run is allowed to use.
@@ -713,7 +799,7 @@ jobs:
     name: Package ${{ matrix.component }}
     runs-on: ubuntu-latest
     # Only after everything that can be checked without a cluster has passed.
-    needs: [chart, sharding, suite, scripts, code, images, runner, aggregator, stack]
+    needs: [chart, sharding, suite, scripts, code, images, runner, aggregator, stack, postgres]
     permissions:
       contents: read
       # Silently downgraded to read on a fork pull request. Asked for anyway:

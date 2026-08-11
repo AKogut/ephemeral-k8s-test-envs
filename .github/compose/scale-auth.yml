@@ -1,0 +1,8 @@
+# Drops auth-service's fixed host port so it can be scaled past one replica.
+#
+# Compose refuses to publish one host port from two containers, and rightly.
+# Nothing needs to reach auth-service directly for the replica check — the
+# gateway does, by service name, which is also how it works in the cluster.
+services:
+  auth-service:
+    ports: !reset []
