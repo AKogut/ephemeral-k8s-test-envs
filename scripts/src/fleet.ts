@@ -119,6 +119,49 @@ function selfDestructOutcome(job: ApiJob | undefined): Outcome {
   return outcome === 'success' || outcome === 'failure' ? outcome : 'unproven';
 }
 
+/**
+ * How evenly the shards divided the work.
+ *
+ * A run is only as fast as its slowest shard, so the number that matters is
+ * not the total but the share of the parallel window that sat idle: with a
+ * perfect split every shard finishes together and nothing is wasted.
+ *
+ * This is the one measurement here that is about speed rather than about the
+ * cheap-and-cleaned-up claim, which is why it is reported and never fatal.
+ * Weights drift as tests are added (#85), and a report that goes red for that
+ * would be a report that goes red every week.
+ */
+export interface ShardBalance {
+  shards: number;
+  slowestMs: number;
+  fastestMs: number;
+  /** Percentage of the slowest shard's window that other shards spent idle. */
+  wastedPercent: number;
+}
+
+interface RawSummary {
+  shards?: { durationMs?: number }[];
+}
+
+export function shardBalance(summary: unknown): ShardBalance | undefined {
+  const durations = ((summary as RawSummary | null)?.shards ?? [])
+    .map((shard) => shard.durationMs)
+    .filter((value): value is number => typeof value === 'number' && value > 0);
+
+  if (durations.length < 2) return undefined;
+
+  const slowestMs = Math.max(...durations);
+  const fastestMs = Math.min(...durations);
+  const mean = durations.reduce((total, value) => total + value, 0) / durations.length;
+
+  return {
+    shards: durations.length,
+    slowestMs,
+    fastestMs,
+    wastedPercent: Math.round((1 - mean / slowestMs) * 1000) / 10,
+  };
+}
+
 export interface RunReport {
   id: number;
   event: string;
@@ -129,9 +172,15 @@ export interface RunReport {
   lifetimeMs?: number;
   teardown: Outcome;
   selfDestruct: Outcome;
+  /** Undefined when the run's results are gone — artifacts expire. */
+  balance?: ShardBalance;
 }
 
-export function runReport(run: ApiRun, jobs: readonly ApiJob[]): RunReport {
+export function runReport(
+  run: ApiRun,
+  jobs: readonly ApiJob[],
+  balance?: ShardBalance,
+): RunReport {
   const environment = jobs.find((job) => job.name === ENVIRONMENT_JOB);
   const selfDestruct = jobs.find((job) => job.name === SELF_DESTRUCT_JOB);
 
@@ -149,6 +198,7 @@ export function runReport(run: ApiRun, jobs: readonly ApiJob[]): RunReport {
     teardown:
       lifetimeMs === undefined ? 'unproven' : stepOutcome(environment, TEARDOWN_PROOF_STEP),
     selfDestruct: selfDestructOutcome(selfDestruct),
+    ...(balance === undefined ? {} : { balance }),
   };
 }
 
@@ -171,6 +221,8 @@ export interface FleetSummary {
   medianLifetimeMs?: number;
   longestLifetimeMs?: number;
   longest?: RunReport;
+  /** Median share of the parallel window spent idle, where results survive. */
+  medianWastedPercent?: number;
 }
 
 export function summarise(reports: readonly RunReport[]): FleetSummary {
@@ -181,6 +233,12 @@ export function summarise(reports: readonly RunReport[]): FleetSummary {
   const longest = reports
     .filter((report) => report.lifetimeMs !== undefined)
     .sort((a, b) => b.lifetimeMs! - a.lifetimeMs!)[0];
+
+  const medianWasted = median(
+    reports
+      .map((report) => report.balance?.wastedPercent)
+      .filter((value): value is number => value !== undefined),
+  );
 
   return {
     runs: reports.length,
@@ -195,6 +253,7 @@ export function summarise(reports: readonly RunReport[]): FleetSummary {
     ...(longest?.lifetimeMs === undefined
       ? {}
       : { longestLifetimeMs: longest.lifetimeMs, longest }),
+    ...(medianWasted === undefined ? {} : { medianWastedPercent: medianWasted }),
   };
 }
 
@@ -278,14 +337,21 @@ export function renderReport(summary: FleetSummary, reports: readonly RunReport[
       `| Longest | ${formatDuration(summary.longestLifetimeMs)} (run ${summary.longest?.id ?? '?'}) |`,
     );
   }
+  if (summary.medianWastedPercent !== undefined) {
+    lines.push(`| Median shard time wasted on imbalance | ${summary.medianWastedPercent}% |`);
+  }
   lines.push('');
 
-  lines.push('| Run | Branch | Lifetime | Teardown | Self-destruct |', '|---|---|---|---|---|');
+  lines.push(
+    '| Run | Branch | Lifetime | Teardown | Self-destruct | Shard waste |',
+    '|---|---|---|---|---|---|',
+  );
   for (const report of reports) {
     lines.push(
       `| ${report.id} | \`${report.branch}\` | ` +
         `${report.lifetimeMs === undefined ? '–' : formatDuration(report.lifetimeMs)} | ` +
-        `${outcomeMark(report.teardown)} | ${outcomeMark(report.selfDestruct)} |`,
+        `${outcomeMark(report.teardown)} | ${outcomeMark(report.selfDestruct)} | ` +
+        `${report.balance === undefined ? '–' : `${report.balance.wastedPercent}%`} |`,
     );
   }
   lines.push('');
