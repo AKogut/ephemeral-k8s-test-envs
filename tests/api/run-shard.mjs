@@ -57,6 +57,49 @@ function sharderCommand() {
   return ['npx', ['--yes', 'tsx', path.join(repoRoot, 'scripts', 'src', 'shard-tests.ts')]];
 }
 
+/** Same resolution as the sharder, for the results uploader. */
+function syncCommand() {
+  if (process.env.SYNC_CLI) return ['node', [process.env.SYNC_CLI]];
+
+  const candidates = [
+    '/opt/sharder/sync-results.js',
+    path.join(repoRoot, 'scripts', 'dist', 'sync-results.js'),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return ['node', [candidate]];
+  }
+
+  return ['npx', ['--yes', 'tsx', path.join(repoRoot, 'scripts', 'src', 'sync-results.ts')]];
+}
+
+/**
+ * Sends this shard's directory to object storage.
+ *
+ * A no-op when the storage is not configured, which is how the shared-volume
+ * backend keeps working unchanged.
+ *
+ * Called on *every* exit path, including the one where a shard was assigned no
+ * spec files. That shard still writes a shard-info.json, and the aggregator
+ * counts directories: a skipped shard that uploaded nothing would be reported
+ * as a missing shard and fail the run.
+ *
+ * A failed upload fails the shard. Results that never arrive turn into a report
+ * over part of the suite, which is worse than a red pod.
+ */
+function uploadResults() {
+  if (!process.env.RESULTS_S3_ENDPOINT) return;
+
+  const [command, leadingArgs] = syncCommand();
+  const result = spawnSync(command, [...leadingArgs, '--upload', shardDir], {
+    stdio: 'inherit',
+    env: process.env,
+  });
+
+  if (result.status !== 0) {
+    throw new Error(`uploading results failed (exit ${result.status})`);
+  }
+}
+
 async function waitForReady() {
   const target = `${baseUrl.replace(/\/+$/, '')}/readyz`;
   const deadline = Date.now() + readyTimeoutMs;
@@ -121,6 +164,7 @@ async function main() {
       path.join(shardDir, 'shard-info.json'),
       JSON.stringify({ shardIndex, shardTotal, files: [], skipped: true }, null, 2),
     );
+    uploadResults();
     return 0;
   }
 
@@ -160,6 +204,10 @@ async function main() {
   );
 
   log(`finished in ${((Date.now() - startedAt) / 1000).toFixed(1)}s with exit code ${playwright.status}`);
+
+  // After the run, not instead of it: a shard whose tests failed still has
+  // results, and they belong in the report.
+  uploadResults();
 
   // The exit code is deliberately propagated: the Job should record a failed
   // shard as a failed pod, and the aggregator reports the detail.

@@ -90,6 +90,7 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            {{- include "test-env.resultsEnv" . | nindent 12 }}
           resources:
             {{- toYaml .Values.tests.resources | nindent 12 }}
           volumeMounts:
@@ -99,8 +100,16 @@ spec:
               mountPath: /tmp
       volumes:
         - name: results
+          {{- if eq (include "test-env.resultsOnS3" .) "true" }}
+          # Local scratch, not shared storage. The shard writes here and uploads
+          # to the bucket when it finishes, which is what frees the scheduler to
+          # put this pod on any node.
+          emptyDir:
+            sizeLimit: {{ .Values.tests.results.size }}
+          {{- else }}
           persistentVolumeClaim:
             claimName: {{ include "test-env.resultsPvcName" . }}
+          {{- end }}
         - name: tmp
           emptyDir:
             sizeLimit: 128Mi

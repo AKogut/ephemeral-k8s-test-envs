@@ -81,6 +81,7 @@ spec:
               value: {{ include "test-env.imageTag" . | quote }}
             - name: ENV_ID
               value: {{ include "test-env.envId" . | quote }}
+            {{- include "test-env.resultsEnv" . | nindent 12 }}
           resources:
             {{- toYaml .Values.aggregator.resources | nindent 12 }}
           volumeMounts:
@@ -90,8 +91,15 @@ spec:
               mountPath: /tmp
       volumes:
         - name: results
+          {{- if eq (include "test-env.resultsOnS3" .) "true" }}
+          # Scratch space to download the shards into and to build the merged
+          # output before it goes back to the bucket.
+          emptyDir:
+            sizeLimit: {{ .Values.tests.results.size }}
+          {{- else }}
           persistentVolumeClaim:
             claimName: {{ include "test-env.resultsPvcName" . }}
+          {{- end }}
         - name: tmp
           emptyDir:
             sizeLimit: 32Mi

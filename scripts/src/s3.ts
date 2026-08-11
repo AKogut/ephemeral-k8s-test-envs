@@ -295,6 +295,26 @@ export class S3Client {
   }
 
   /**
+   * Creates the bucket, treating "it already exists" as success.
+   *
+   * Only useful against the MinIO an ephemeral environment brings with it,
+   * which starts empty every time. Against a real bucket the credentials
+   * usually cannot create one and do not need to, which is why the caller opts
+   * in rather than this being automatic.
+   */
+  async ensureBucket(): Promise<'created' | 'exists'> {
+    try {
+      await this.send('PUT', '', {});
+      return 'created';
+    } catch (error) {
+      // 409 is BucketAlreadyOwnedByYou; a racing shard pod gets it and that is
+      // not a failure. Anything else is.
+      if (error instanceof S3Error && error.status === 409) return 'exists';
+      throw error;
+    }
+  }
+
+  /**
    * Removes everything under a prefix.
    *
    * Used by teardown verification: results that outlive their environment are

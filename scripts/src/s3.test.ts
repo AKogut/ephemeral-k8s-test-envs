@@ -330,6 +330,39 @@ describe('S3Client', () => {
     }
   });
 
+  it('creates the bucket when it is absent', async () => {
+    const stub = stubFetch([new Response('', { status: 200 })]);
+    try {
+      assert.equal(await client.ensureBucket(), 'created');
+      assert.equal(stub.calls[0]?.init?.method, 'PUT');
+      assert.equal(stub.calls[0]?.url, 'http://minio:9000/results');
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it('treats an existing bucket as success, because shard pods race', async () => {
+    // Four shard pods start at once and all four try. Three get 409, and that
+    // is the normal path, not an error.
+    const stub = stubFetch([
+      new Response('<Error><Code>BucketAlreadyOwnedByYou</Code></Error>', { status: 409 }),
+    ]);
+    try {
+      assert.equal(await client.ensureBucket(), 'exists');
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it('does not swallow a real failure while creating the bucket', async () => {
+    const stub = stubFetch([new Response('<Error><Code>AccessDenied</Code></Error>', { status: 403 })]);
+    try {
+      await assert.rejects(() => client.ensureBucket(), /403/);
+    } finally {
+      stub.restore();
+    }
+  });
+
   it('surfaces the status and body when a request is refused', async () => {
     // A wrong key or a missing bucket policy shows up here, and the message is
     // the only diagnostic a shard pod produces.
