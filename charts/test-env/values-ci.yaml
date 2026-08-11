@@ -79,8 +79,6 @@ aggregator:
   waitTimeoutSeconds: 1200
   ttlSecondsAfterFinished: 600
 
-resultsExporter:
-  enabled: true
 
 teardown:
   selfDestruct:

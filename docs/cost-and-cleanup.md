@@ -145,15 +145,22 @@ One environment at the CI resource requests:
 | notes-service | 25m | 64Mi |
 | shard pods × 4 (transient) | 400m | 640Mi |
 | aggregator (transient) | 50m | 96Mi |
-| results PVC | — | 512Mi disk |
-| **Steady state after tests finish** | **100m** | **224Mi** |
+| MinIO (results bucket) | 50m | 128Mi |
+| **Steady state after tests finish** | **150m** | **352Mi** |
 
-100 millicores is small. The problem is never one environment — it is thirty of
+150 millicores is small. The problem is never one environment — it is thirty of
 them, each left behind by a merged PR nobody thought about again. Thirty leaked
-environments is 3 vCPU and 6.5 GB of memory reserved permanently, plus 15 GB of
-disk, for code that no longer exists on any branch.
+environments is 4.5 vCPU and 10.3 GB of memory reserved permanently, for code
+that no longer exists on any branch.
 
-At roughly \$0.04 per vCPU-hour, thirty leaked environments cost about **\$85 a
+Object storage made this worse, not better, and that is worth stating plainly:
+MinIO is a pod that keeps running after the tests finish, where the results
+volume was only disk. A leaked environment now costs half again as much CPU. It
+buys the shards the ability to run on any node
+([ADR 0007](adr/0007-object-storage-for-shard-results.md)), and it makes teardown
+matter more rather than less.
+
+At roughly \$0.04 per vCPU-hour, thirty leaked environments cost about **\$130 a
 month**, forever, and grow with every merge.
 
 That is the entire argument for treating teardown as a first-class, tested step

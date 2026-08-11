@@ -36,9 +36,8 @@ flowchart TB
         AUTH[auth-service<br/>1 replica · SQLite]
         NOTES[notes-service<br/>1 replica · SQLite]
         JOB[Indexed Job<br/>4 shard pods]
-        PVC[(results PVC)]
+        MINIO[(MinIO<br/>results bucket)]
         AGG[aggregator Job]
-        EXP[results-exporter pod]
     end
 
     subgraph after["Back on the runner"]
@@ -48,15 +47,14 @@ flowchart TB
     end
 
     PR --> VERIFY --> BUILD --> KIND --> HELM
-    HELM --> GW & AUTH & NOTES & JOB
+    HELM --> GW & AUTH & NOTES & JOB & MINIO
     GW --> AUTH & NOTES
     NOTES -->|verifies each token| AUTH
     JOB -->|HTTP| GW
-    JOB -->|shard-N/allure-results| PVC
-    PVC --> AGG
-    AGG -->|merged/| PVC
-    PVC --> EXP
-    EXP -->|kubectl cp| REPORT
+    JOB -->|uploads shard-N/| MINIO
+    MINIO -->|downloads the run| AGG
+    AGG -->|uploads merged/| MINIO
+    MINIO -->|fetch-results.sh| REPORT
     REPORT --> DOWN --> PROVE
 ```
 
@@ -116,33 +114,50 @@ logs are enough to find the exact request in the exact pod.
 
 ## Result storage
 
-Shard pods write to a shared `PersistentVolumeClaim`:
+Shard pods upload their results to object storage, and the aggregator downloads
+the run before merging it:
 
 ```
-/results/
+<bucket>/<environment>/
   shard-0/allure-results/*.json   shard-0/shard-info.json
   shard-1/allure-results/*.json   shard-1/shard-info.json
   …
   merged/allure-results/          merged/summary.json   merged/summary.md
 ```
 
-**The access mode is the constraint worth understanding.** The chart defaults to
-`ReadWriteOnce`, which permits multiple pods only when they are scheduled on the
-same node. That is always true on `kind` and `minikube` (one node), and it keeps
-the local demo free of any storage add-on.
+**This used to be a shared `PersistentVolumeClaim`, and the reason it is not is
+worth understanding.** `ReadWriteOnce` attaches a volume to exactly one node, so
+every pod mounting it has to be scheduled there. On a one-node cluster that costs
+nothing and cannot be seen. On a three-node cluster it is measurable:
 
-On a real multi-node cluster, one of these is needed instead:
+```
+shards-r1-0  worker      shards-r1-2  worker
+shards-r1-1  worker      shards-r1-3  worker
+```
 
-| Option | Change | Trade-off |
-|---|---|---|
-| `ReadWriteMany` volume | `--set tests.results.accessMode=ReadWriteMany --set tests.results.storageClass=nfs` | Simplest; needs a storage class that supports RWX (EFS, Filestore, NFS, Longhorn). |
-| Pin shards to one node | Add `tests.affinity` | Keeps RWO but throws away multi-node parallelism. |
-| Object storage (MinIO / S3) | Shards `PUT` results, aggregator `GET`s them | No shared-volume constraint at all, works across clusters. Costs a MinIO deployment or a bucket. |
+All four shards on one of two available workers — and the run passes, reporting a
+3.4× speedup. A failure would announce itself; this does not. The wall clock is
+real, it simply describes one machine.
 
-Object storage is the right answer at real scale, and the aggregator's input is
-already a directory-per-shard abstraction, so swapping the transport touches
-`aggregate-results.ts` and two templates. It is left out on purpose: this project
-is meant to run end to end on a laptop with no cloud account.
+With object storage, on the same cluster:
+
+```
+shards-r1-0  worker2     shards-r1-2  worker2
+shards-r1-1  worker      shards-r1-3  worker
+minio        worker
+```
+
+Both workers used, with shards 0 and 2 reading and writing storage that lives on
+the other node — over a Service, which constrains nothing about scheduling. CI
+asserts this on every pull request and fails if every shard lands on one node.
+
+An environment brings its own MinIO (one replica, `emptyDir` — the results die
+with the namespace, so there is nothing to persist), or is pointed at a real
+bucket with `tests.results.s3.endpoint`. The chart refuses to render with
+neither.
+
+See [ADR 0007](adr/0007-object-storage-for-shard-results.md) for the decision and
+what it costs.
 
 ## Ordering between Jobs
 

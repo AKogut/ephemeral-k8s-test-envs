@@ -90,16 +90,11 @@ spec:
             - name: tmp
               mountPath: /tmp
       volumes:
+        # Scratch space to download the shards into and to build the merged
+        # output before it goes back to the bucket.
         - name: results
-          {{- if eq (include "test-env.resultsOnS3" .) "true" }}
-          # Scratch space to download the shards into and to build the merged
-          # output before it goes back to the bucket.
           emptyDir:
             sizeLimit: {{ .Values.tests.results.size }}
-          {{- else }}
-          persistentVolumeClaim:
-            claimName: {{ include "test-env.resultsPvcName" . }}
-          {{- end }}
         - name: tmp
           emptyDir:
             sizeLimit: 32Mi
