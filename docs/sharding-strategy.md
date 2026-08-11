@@ -104,32 +104,32 @@ $ npm run shard:plan
 
 Weights: tests/api/test-weights.json
 Shard plan: 11 files across 4 shards
-Ideal weight per shard: 12.22 | makespan: 12.50 | balance: 97.8%
+Ideal weight per shard: 8.34 | makespan: 8.65 | balance: 96.4%
 
-  shard 0: 2 file(s), weight 11.90
-      - auth-me.spec.ts
+  shard 0: 2 file(s), weight 7.98
+      - auth-login.spec.ts
       - user-journey.spec.ts
-  shard 1: 3 file(s), weight 12.50
+  shard 1: 3 file(s), weight 8.56
       - auth-register.spec.ts
       - notes-listing.spec.ts
       - platform-health.spec.ts
-  shard 2: 3 file(s), weight 12.40
+  shard 2: 3 file(s), weight 8.65
       - gateway-routing.spec.ts
-      - notes-authz.spec.ts
-      - resilience.spec.ts
-  shard 3: 3 file(s), weight 12.10
-      - auth-login.spec.ts
       - notes-crud.spec.ts
       - notes-validation.spec.ts
+  shard 3: 3 file(s), weight 8.16
+      - auth-me.spec.ts
+      - notes-authz.spec.ts
+      - resilience.spec.ts
 ```
 
 Note shard 0: **two files, not three.** `user-journey.spec.ts` is the most
-expensive file in the suite at 9.5s, so LPT places it first and then gives it only
+expensive file in the suite at 5.6s, so LPT places it first and then gives it only
 the cheapest remaining file for company. A count-based split would have handed it
 three files and made it the bottleneck.
 
-The ideal is 12.22 and the slowest shard is 12.50 — **97.8% of a perfect split**,
-against a theoretical worst case of 12.22 × (4/3 − 1/12) = 15.3.
+The ideal is 8.34 and the slowest shard is 8.65 — **96.4% of a perfect split**,
+against a theoretical worst case of 8.34 × (4/3 − 1/12) = 10.4.
 
 ## Handling the awkward cases
 
@@ -137,7 +137,7 @@ against a theoretical worst case of 12.22 × (4/3 − 1/12) = 15.3.
 |---|---|
 | More shards than files | Extra shards get an empty list, log "nothing to do", and exit 0. The entrypoint checks for this explicitly — `playwright test` with no file arguments would otherwise run the **whole suite** on every empty shard. |
 | A brand-new spec file, absent from the weight table | Weighted at the **median** of the known weights, not `1`. Guessing "cheapest" would pile every new file onto one shard. |
-| A stale weight table | Costs balance, never correctness. Every file still runs exactly once. |
+| A stale weight table | Costs balance, never correctness. Every file still runs exactly once — and `npm run weights:update` regenerates it from a finished run. |
 | A malformed weight table | Fails loudly. A missing file falls back to equal weights; a file containing `"fast"` where a number belongs is a mistake worth surfacing. |
 | A shard pod crashes | The Job records a failed index and the Job as a whole does not complete. From Phase 3, the aggregator additionally refuses to report a green run over a missing shard directory. |
 

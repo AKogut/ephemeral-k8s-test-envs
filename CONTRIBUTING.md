@@ -130,8 +130,19 @@ Two rules keep the suite safe to run across an arbitrary number of pods:
    counting them is fine. Anything that counts across users will fail
    intermittently and only under parallelism.
 
-Add an entry to `tests/api/test-weights.json` with a rough duration in seconds.
-Getting it wrong costs shard balance, never correctness.
+A new file needs no entry in `tests/api/test-weights.json` — the planner weights
+an unknown file at the median of the known ones rather than guessing "cheapest".
+After a run, regenerate the table from what actually happened:
+
+```bash
+npm run weights:update              # blends the measurement into the stored numbers
+npm run weights:update -- --dry-run # show the drift, write nothing
+```
+
+It refuses input covering more than an hour, because results accumulate if a
+download directory is reused and weights taken from several runs at once are
+inflated by however many were in there — a wrong number that looks entirely
+plausible. Getting weights wrong costs shard balance, never correctness.
 
 ## Changing the chart
 

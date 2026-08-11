@@ -199,7 +199,18 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Show the plan the shard pods will compute
-        run: npm run shard:plan
+        run: |
+          npm run shard:plan | tee /tmp/plan.txt
+
+          # Warned on, not gated. The figure is self-referential — it says how
+          # evenly the planner split the weights it was given, not how evenly
+          # the real work landed — and it moves a point or two between runs. A
+          # threshold this far below the usual 96-98% only fires when one file
+          # has come to dominate, which is the case worth a human looking.
+          balance=$(grep -oE 'balance: [0-9]+' /tmp/plan.txt | grep -oE '[0-9]+' || echo 100)
+          if [ "$balance" -lt 90 ]; then
+            echo "::warning::shard balance is ${balance}% — one spec file may now dominate the suite"
+          fi
 
       - name: The plan covers every spec file exactly once
         run: |
@@ -895,13 +906,48 @@ jobs:
           kubectl -n "$ns" wait --for=condition=complete --timeout=6m "job/$job" || true
           kubectl -n "$ns" logs "job/$job" --tail=200 || true
 
+      - name: Build the results tooling
+        run: |
+          # fetch-results.sh talks to the bucket through the compiled sync CLI.
+          # Nothing else in this job needs node, which is why this was missing —
+          # and why the collection below failed silently for four pull requests.
+          npm --prefix scripts ci
+          npm --prefix scripts run build
+
       - name: Copy results out of the cluster
+        id: collect
         continue-on-error: true
         run: |
           ./scripts/fetch-results.sh \
             --namespace "${{ steps.env.outputs.namespace }}" \
             --release "${{ steps.env.outputs.release }}" \
             --output ./results
+
+      - name: Regenerate the shard weights from this run
+        if: always()
+        continue-on-error: true
+        run: |
+          # Published rather than committed: the ruleset does not allow pushing
+          # to main, and it should not. This makes the current truth one
+          # download away from whoever wants to apply it.
+          #
+          # Taken from CI rather than a laptop on purpose — these are the
+          # machines the weights have to be right about.
+          node scripts/dist/update-weights.js \
+            --weights tests/api/test-weights.json \
+            --input results/merged/allure-results \
+            --dry-run | tee /tmp/weights.txt || true
+
+          if [ -s /tmp/weights.txt ]; then
+            {
+              echo '<details><summary>Shard weights measured by this run</summary>'
+              echo
+              echo '```'
+              cat /tmp/weights.txt
+              echo '```'
+              echo '</details>'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Publish the run summary
         if: always()
@@ -996,6 +1042,19 @@ jobs:
       - name: Delete the kind cluster
         if: always()
         run: kind delete cluster --name ephemeral-test-envs || true
+
+      - name: The report was actually collected
+        if: always() && !inputs.keep_environment
+        run: |
+          # `continue-on-error` above exists so teardown still runs. It also
+          # means a broken collection step reports success, which is how the
+          # report quietly stopped being published between #95 and #99. The
+          # verdict is taken here instead, after the environment is gone.
+          if [ ! -f ./results/merged/summary.md ]; then
+            echo "::error::the merged report was not collected from the environment"
+            exit 1
+          fi
+          echo "collected $(find ./results/merged/allure-results -type f | wc -l) result file(s)"
 
       - name: Fail the build if any test failed
         if: always()
