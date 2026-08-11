@@ -38,9 +38,20 @@ function shutdown(signal: string): void {
       logger.error('error while closing server', { err: error.message });
       process.exit(1);
     }
-    store.close();
-    logger.info('shutdown complete');
-    process.exit(0);
+    // Closing the store is awaited rather than fired off: for SQLite it
+    // returns immediately, but a connection pool has sockets to drain, and
+    // exiting first would abandon them mid-flight. `forceExit` above is the
+    // backstop if it ever hangs.
+    store.close().then(
+      () => {
+        logger.info('shutdown complete');
+        process.exit(0);
+      },
+      (closeError: unknown) => {
+        logger.error('error while closing the store', { err: String(closeError) });
+        process.exit(1);
+      },
+    );
   });
 }
 

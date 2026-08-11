@@ -54,8 +54,8 @@ const listQuerySchema = z.object({
  * 403 would confirm the id exists, which lets a caller enumerate other users'
  * note ids. `notes-authz.spec.ts` locks this behaviour in.
  */
-function requireOwnedNote(store: NoteStore, ownerId: string, id: string) {
-  const note = store.findById(ownerId, id);
+async function requireOwnedNote(store: NoteStore, ownerId: string, id: string) {
+  const note = await store.findById(ownerId, id);
   if (!note) throw ApiError.notFound('Note not found');
   return note;
 }
@@ -72,11 +72,11 @@ export function createNotesRouter(store: NoteStore, config: Config): Router {
 
   router.get(
     '/notes',
-    asyncRoute((req, res) => {
+    asyncRoute(async (req, res) => {
       const query = listQuerySchema.parse(req.query);
       const ownerId = req.user!.id;
 
-      const { items, total } = store.list({
+      const { items, total } = await store.list({
         ownerId,
         ...(query.q ? { search: query.q } : {}),
         ...(query.tag ? { tag: query.tag } : {}),
@@ -101,10 +101,10 @@ export function createNotesRouter(store: NoteStore, config: Config): Router {
 
   router.get(
     '/notes/stats',
-    asyncRoute((req, res) => {
+    asyncRoute(async (req, res) => {
       const ownerId = req.user!.id;
-      const tags = store.tagCounts(ownerId);
-      const { total } = store.list({
+      const tags = await store.tagCounts(ownerId);
+      const { total } = await store.list({
         ownerId,
         limit: 1,
         offset: 0,
@@ -117,49 +117,49 @@ export function createNotesRouter(store: NoteStore, config: Config): Router {
 
   router.post(
     '/notes',
-    asyncRoute((req, res) => {
+    asyncRoute(async (req, res) => {
       const input = createNoteSchema.parse(req.body);
-      const note = store.create(req.user!.id, input);
+      const note = await store.create(req.user!.id, input);
       res.status(201).location(`/notes/${note.id}`).json(note);
     }),
   );
 
   router.get(
     '/notes/:id',
-    asyncRoute((req, res) => {
-      res.status(200).json(requireOwnedNote(store, req.user!.id, noteId(req)));
+    asyncRoute(async (req, res) => {
+      res.status(200).json(await requireOwnedNote(store, req.user!.id, noteId(req)));
     }),
   );
 
   router.put(
     '/notes/:id',
-    asyncRoute((req, res) => {
+    asyncRoute(async (req, res) => {
       const ownerId = req.user!.id;
       const id = noteId(req);
-      requireOwnedNote(store, ownerId, id);
+      await requireOwnedNote(store, ownerId, id);
       const input = createNoteSchema.parse(req.body);
-      res.status(200).json(store.replace(ownerId, id, input));
+      res.status(200).json(await store.replace(ownerId, id, input));
     }),
   );
 
   router.patch(
     '/notes/:id',
-    asyncRoute((req, res) => {
+    asyncRoute(async (req, res) => {
       const ownerId = req.user!.id;
       const id = noteId(req);
-      requireOwnedNote(store, ownerId, id);
+      await requireOwnedNote(store, ownerId, id);
       const patch = patchNoteSchema.parse(req.body);
-      res.status(200).json(store.update(ownerId, id, patch));
+      res.status(200).json(await store.update(ownerId, id, patch));
     }),
   );
 
   router.delete(
     '/notes/:id',
-    asyncRoute((req, res) => {
+    asyncRoute(async (req, res) => {
       const ownerId = req.user!.id;
       const id = noteId(req);
-      requireOwnedNote(store, ownerId, id);
-      store.remove(ownerId, id);
+      await requireOwnedNote(store, ownerId, id);
+      await store.remove(ownerId, id);
       res.status(204).end();
     }),
   );
@@ -175,23 +175,29 @@ export function createSystemRouter(store: NoteStore, config: Config): Router {
     res.status(200).json({ status: 'ok', service: config.serviceName, envId: config.envId });
   });
 
+  // Not wrapped in asyncRoute: a rejected store call here must become a 503
+  // with the reason in the body, which is what Kubernetes and a human reading
+  // `kubectl describe` both need. Handing it to the error handler would make
+  // an unreachable database a 500 like any other.
   router.get('/readyz', (_req, res) => {
-    try {
-      const notes = store.ping();
-      res.status(200).json({
-        status: 'ready',
-        service: config.serviceName,
-        envId: config.envId,
-        uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
-        checks: { database: 'ok', notes, authMode: config.authMode },
-      });
-    } catch (error) {
-      res.status(503).json({
-        status: 'not-ready',
-        service: config.serviceName,
-        checks: { database: error instanceof Error ? error.message : 'unknown error' },
-      });
-    }
+    store.ping().then(
+      (notes) => {
+        res.status(200).json({
+          status: 'ready',
+          service: config.serviceName,
+          envId: config.envId,
+          uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
+          checks: { database: 'ok', notes, authMode: config.authMode },
+        });
+      },
+      (error: unknown) => {
+        res.status(503).json({
+          status: 'not-ready',
+          service: config.serviceName,
+          checks: { database: error instanceof Error ? error.message : 'unknown error' },
+        });
+      },
+    );
   });
 
   router.get('/version', (_req, res) => {
