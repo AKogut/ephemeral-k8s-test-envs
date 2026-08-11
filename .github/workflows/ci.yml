@@ -1102,9 +1102,14 @@ jobs:
           # Asked from inside the cluster, with the Host header the way DNS
           # would supply it. That is what the controller routes on, so this
           # tests the rule rather than a port-forward dressed up as a URL.
-          kubectl -n "$NS" run urlprobe --image=curlimages/curl:8.11.1 --restart=Never \
+          # Outside the environment's namespace, and not to dodge anything:
+          # somebody opening a preview URL is not inside it either. The first
+          # attempt put the probe in the namespace and the ResourceQuota
+          # refused it — correctly, since the quota is computed from the
+          # release's own workloads and a curl pod is not one of them (#83).
+          kubectl -n default run urlprobe --image=curlimages/curl:8.11.1 --restart=Never \
             --command -- sleep 300
-          kubectl -n "$NS" wait --for=condition=ready pod/urlprobe --timeout=120s
+          kubectl -n default wait --for=condition=ready pod/urlprobe --timeout=120s
 
           controller=http://ingress-nginx-controller.ingress-nginx.svc.cluster.local
 
@@ -1115,7 +1120,7 @@ jobs:
           # flake shipped as a check.
           body=""
           for _ in $(seq 1 20); do
-            body=$(kubectl -n "$NS" exec urlprobe -- \
+            body=$(kubectl -n default exec urlprobe -- \
               curl -fsS --max-time 15 -H "Host: ${NS}.${DOMAIN}" "$controller/readyz" 2>/dev/null || true)
             [ -n "$body" ] && break
             sleep 3
@@ -1130,7 +1135,7 @@ jobs:
           # The control: the same request without the hostname must NOT be
           # served this environment. Otherwise "it answered" would only mean
           # the controller answers everything.
-          code=$(kubectl -n "$NS" exec urlprobe -- \
+          code=$(kubectl -n default exec urlprobe -- \
             curl -s -o /dev/null -w '%{http_code}' --max-time 15 -H "Host: someone-else.${DOMAIN}" \
             "$controller/readyz")
           echo "an unknown hostname gets: $code"
@@ -1143,7 +1148,7 @@ jobs:
           # An Ingress is namespaced, so this is the property that keeps a
           # preview URL from outliving what it points at — the same class of
           # leak as an orphaned PersistentVolume.
-          kubectl -n "$NS" delete pod urlprobe --ignore-not-found >/dev/null
+          kubectl -n default delete pod urlprobe --ignore-not-found >/dev/null
           helm uninstall preview -n "$NS" --wait --timeout 3m
           kubectl delete namespace "$NS" --wait=true --timeout=3m
           ./scripts/verify-teardown.sh --namespace "$NS" --release preview
