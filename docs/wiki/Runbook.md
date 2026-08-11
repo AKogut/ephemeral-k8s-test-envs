@@ -65,9 +65,9 @@ helm upgrade $RELEASE ./charts/test-env -n $NS --reuse-values --set tests.shards
 helm upgrade $RELEASE ./charts/test-env -n $NS -f charts/test-env/values-ci.yaml
 ```
 
-If the message mentions the volume, the results PVC is `ReadWriteOnce` and the
-pods were scheduled onto different nodes. On a multi-node cluster set
-`tests.results.accessMode=ReadWriteMany` with a storage class that supports it.
+Results no longer use a shared volume, so scheduling is never blocked on one —
+if a shard is `Pending`, it is capacity, not storage. See
+[ADR 0007](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/docs/adr/0007-object-storage-for-shard-results.md).
 
 ---
 
@@ -130,16 +130,19 @@ it hit `activeDeadlineSeconds`.
 
 ---
 
-## `fetch-results.sh` copies nothing
+## `fetch-results.sh` downloads nothing
+
+It port-forwards MinIO and reads the bucket, so the first question is whether
+anything was written to it:
 
 ```bash
-kubectl -n $NS get pod ${RELEASE}-test-env-results-exporter
-kubectl -n $NS exec ${RELEASE}-test-env-results-exporter -- ls -la /results
+kubectl -n $NS get pods -l app.kubernetes.io/component=minio
+kubectl -n $NS logs job/${RELEASE}-test-env-aggregate-r1 --tail=20
 ```
 
-If the pod is missing, `resultsExporter.enabled` was set to `false`. If `/results`
-has `shard-*` but no `merged/`, the aggregator has not finished — check its logs
-rather than the copy.
+If the shards uploaded but there is no `merged/`, the aggregator has not
+finished — check its logs rather than the download. If the script reports that
+`scripts/dist` is missing, build it: `npm --prefix scripts run build`.
 
 ---
 

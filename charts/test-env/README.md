@@ -92,5 +92,5 @@ afterwards.
 | Phase | Adds to this chart |
 |---|---|
 | 2 | An `Indexed` Job that runs the API suite across N shard pods, and the shared results volume |
-| 3 | An aggregator Job that merges the per-shard results, and a results-exporter pod |
+| 3 | An aggregator Job that merges the per-shard results out of object storage |
 | 4 | Job TTLs and a self-destruct Job with namespace-scoped RBAC |

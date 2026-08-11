@@ -158,26 +158,13 @@ tests:
   tolerations: []
   affinity: {}
 
-  # -- How per-shard results reach the aggregator.
+  # -- Where per-shard results go: object storage, reached over the network,
+  # so nothing about the results decides which node a shard may run on.
+  # See ADR 0007.
   results:
-    # pvc — a shared volume. Simple, and the reason every shard pod has to be
-    #       scheduled onto one node: ReadWriteOnce attaches to exactly one, so
-    #       a multi-node cluster leaves shards Pending on a volume conflict.
-    # s3  — object storage. Pods talk to it over the network, so they can be
-    #       scheduled anywhere. See issue #82.
-    #
-    # s3 is the default because pvc is only safe where its cost cannot be
-    # observed: on one node. Given more, a ReadWriteOnce volume pulls every
-    # shard onto the node it attached to, the run stays green, and the reported
-    # speedup describes a single machine.
-    backend: s3
-
+    # Scratch space inside each pod. A shard writes here and then uploads; the
+    # aggregator downloads the run into the same place before merging.
     size: 1Gi
-    # Only read when backend is pvc. On a multi-node cluster this has to become
-    # ReadWriteMany with a storage class that supports it — which is the
-    # infrastructure dependency the s3 backend exists to avoid.
-    accessMode: ReadWriteOnce
-    storageClass: ""
 
     s3:
       # Left empty while minio.enabled, the chart points this at the MinIO it
@@ -199,9 +186,9 @@ tests:
 
 # -- Object storage for results, inside the environment.
 #
-# Only deployed when tests.results.backend is s3; with the volume backend this
-# is simply ignored rather than being an error, so switching backends is one
-# flag and not two.
+# Turn this off only when tests.results.s3.endpoint points at a bucket that
+# already exists. The chart refuses to render with neither, because the results
+# would have nowhere to go.
 #
 # A single pod on an emptyDir: the results live and die with the namespace, so
 # there is nothing here worth persisting. The point is not durability — it is
@@ -244,20 +231,6 @@ aggregator:
     limits:
       cpu: 500m
       memory: 256Mi
-
-# -- Long-lived pod that mounts the results volume so CI can `kubectl cp` the
-# merged report out of the cluster. `kubectl cp` needs a running container, and
-# a completed Job's pod does not have one.
-resultsExporter:
-  enabled: true
-  component: results-exporter
-  resources:
-    requests:
-      cpu: 10m
-      memory: 32Mi
-    limits:
-      cpu: 100m
-      memory: 64Mi
 
 # ------------------------------------------------------------------ teardown --
 

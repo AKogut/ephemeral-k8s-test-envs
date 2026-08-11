@@ -103,7 +103,6 @@ Usage: {{ include "test-env.image" (dict "context" . "component" "gateway") }}
 {{- define "test-env.secretKey" -}}
 {{- if .Values.jwt.existingSecret -}}{{ .Values.jwt.existingSecretKey }}{{- else -}}jwt-secret{{- end -}}
 {{- end -}}
-{{- define "test-env.resultsPvcName" -}}{{ include "test-env.fullname" . }}-results{{- end -}}
 
 {{/*
 Job names carry the release revision.
@@ -177,11 +176,6 @@ Environment variables every service shares.
       fieldPath: metadata.namespace
 {{- end -}}
 
-{{/* True when results go to object storage rather than a shared volume. */}}
-{{- define "test-env.resultsOnS3" -}}
-{{- eq .Values.tests.results.backend "s3" -}}
-{{- end -}}
-
 {{- define "test-env.minioServiceName" -}}
 {{- printf "%s-minio" (include "test-env.fullname" .) -}}
 {{- end -}}
@@ -212,7 +206,6 @@ disagreeing about the bucket or the endpoint is a failure that would look like
 missing results rather than like a configuration mistake.
 */}}
 {{- define "test-env.resultsEnv" -}}
-{{- if eq (include "test-env.resultsOnS3" .) "true" }}
 - name: RESULTS_S3_ENDPOINT
   value: {{ include "test-env.s3Endpoint" . | quote }}
 - name: RESULTS_S3_BUCKET
@@ -233,21 +226,15 @@ missing results rather than like a configuration mistake.
     secretKeyRef:
       name: {{ include "test-env.s3SecretName" . }}
       key: secret-access-key
-{{- end }}
 {{- end -}}
 
 {{/* Validation that fails the render rather than the rollout. */}}
 {{- define "test-env.validate" -}}
-{{- if not (has .Values.tests.results.backend (list "pvc" "s3")) -}}
-{{- fail (printf "tests.results.backend must be pvc or s3, got %q" .Values.tests.results.backend) -}}
+{{- if and .Values.tests.enabled (not .Values.minio.enabled) (not .Values.tests.results.s3.endpoint) -}}
+{{- fail "results have nowhere to go: set minio.enabled=true or point tests.results.s3.endpoint at a bucket" -}}
 {{- end -}}
-{{- if eq .Values.tests.results.backend "s3" -}}
-{{- if and (not .Values.minio.enabled) (not .Values.tests.results.s3.endpoint) -}}
-{{- fail "tests.results.backend=s3 needs somewhere to write: set minio.enabled=true or tests.results.s3.endpoint" -}}
-{{- end -}}
-{{- if not .Values.tests.results.s3.bucket -}}
-{{- fail "tests.results.backend=s3 requires tests.results.s3.bucket" -}}
-{{- end -}}
+{{- if and .Values.tests.enabled (not .Values.tests.results.s3.bucket) -}}
+{{- fail "tests.results.s3.bucket is required" -}}
 {{- end -}}
 
 {{- if lt (int .Values.tests.shards) 1 -}}

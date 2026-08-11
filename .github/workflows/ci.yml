@@ -76,36 +76,22 @@ jobs:
             echo "::endgroup::"
           done
 
-      - name: Renders and stays secure on the object-storage backend
+      - name: No shared volume survives anywhere in the chart
         run: |
-          # The s3 backend adds a Deployment and removes the volume, so both the
-          # render and the security assertions have to hold for it too — not
-          # only for the default the other steps exercise.
-          helm template ci charts/test-env --namespace ci \
-            -f charts/test-env/values-ci.yaml --set image.tag=deadbeef \
-            --set tests.results.backend=s3 --set minio.enabled=true > /tmp/rendered-s3.yaml
-
-          grep '^kind:' /tmp/rendered-s3.yaml | sort | uniq -c
-
-          # The whole point of this backend: no shared volume, and therefore
-          # nothing tying the shard pods to one node.
-          if grep -q 'kind: PersistentVolumeClaim' /tmp/rendered-s3.yaml; then
-            echo "::error::the s3 backend still renders a PersistentVolumeClaim"
+          # The property the whole design rests on, asserted rather than
+          # assumed: nothing the chart renders can tie a shard pod to one node.
+          if grep -qE 'kind: PersistentVolumeClaim|persistentVolumeClaim' /tmp/rendered.yaml; then
+            echo "::error::the chart renders a PersistentVolumeClaim again"
             exit 1
           fi
-
-          python3 scripts/assert-security-defaults.py /tmp/rendered-s3.yaml
+          echo "confirmed: no PersistentVolumeClaim, no claim reference"
 
       - name: Reject invalid values
         run: |
           # Testing that a chart renders is easy. Testing that it *refuses* to
           # render nonsense is what catches a guard that quietly stopped guarding.
-          # The storage case is written as a pair because the defaults satisfy
-          # each half on its own: s3 is the default backend and minio is on, so
-          # a single --set no longer describes an invalid chart.
           for bad in "tests.shards=0" "tests.shards=999" "notes.authMode=nope" "notes.authMode=" \
-                     "tests.results.backend=nope" \
-                     "tests.results.backend=s3,minio.enabled=false"; do
+                     "minio.enabled=false" "tests.results.s3.bucket="; do
             if helm template ci charts/test-env --set "$bad" >/dev/null 2>&1; then
               echo "::error::chart accepted invalid value: $bad"
               exit 1
