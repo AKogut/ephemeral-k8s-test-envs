@@ -16,13 +16,20 @@
  */
 
 import { parseArgs, resolveOption } from './cli.js';
-import { deleteNamespace, loadInClusterAccess } from './k8s.js';
+import {
+  adoptIntoNamespace,
+  deleteNamespace,
+  getNamespaceUid,
+  loadInClusterAccess,
+} from './k8s.js';
 
 const USAGE = `
 Usage: self-destruct [options]
 
   --namespace <ns>    Namespace to delete   (env: POD_NAMESPACE, default: own namespace)
   --after <seconds>   Wait before deleting  (env: SELF_DESTRUCT_AFTER_SECONDS, default: 0)
+  --rbac-name <name>  ClusterRole and ClusterRoleBinding to hand to the
+                      namespace, so they go with it (env: TEARDOWN_RBAC_NAME)
   --dry-run           Log what would happen and exit 0
   --help
 `.trim();
@@ -42,9 +49,32 @@ async function main(): Promise<number> {
     10,
   );
 
+  const rbacName = resolveOption(args, 'rbac-name', ['TEARDOWN_RBAC_NAME'], '');
+
   if (args['dry-run'] === true) {
     process.stdout.write(`[dry run] would delete namespace ${namespace} after ${afterSeconds}s\n`);
     return 0;
+  }
+
+  // Done first, before the wait, so the namespace owns them even if this pod
+  // never reaches its own deletion — killed, evicted, or the Job's
+  // backoffLimit exhausted. Deleting a namespace does not delete
+  // cluster-scoped objects, and this Job cannot delete its own permissions
+  // and keep them; see adoptIntoNamespace.
+  if (rbacName) {
+    const uid = await getNamespaceUid(access, namespace);
+    if (uid === undefined) {
+      process.stdout.write(`Namespace ${namespace} is already gone; nothing to do.\n`);
+      return 0;
+    }
+    for (const resource of ['clusterroles', 'clusterrolebindings'] as const) {
+      const adopted = await adoptIntoNamespace(access, resource, rbacName, { namespace, uid });
+      process.stdout.write(
+        adopted
+          ? `${resource}/${rbacName} now belongs to namespace ${namespace}.\n`
+          : `${resource}/${rbacName} not found; nothing to adopt.\n`,
+      );
+    }
   }
 
   if (afterSeconds > 0) {

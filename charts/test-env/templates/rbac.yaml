@@ -91,6 +91,19 @@ rules:
     # Pinned to this namespace only.
     resourceNames:
       - {{ .Release.Namespace }}
+  # And patch on exactly these two objects — itself and the ClusterRole it is
+  # bound to — so the Job can hand them to the namespace as an owner and the
+  # garbage collector removes them with it.
+  #
+  # Not `delete`: the Job cannot remove its own permissions and keep them.
+  # Deleting the binding first revokes the right to delete the namespace;
+  # deleting it afterwards races the invalidation of its own token. `patch` on
+  # two named objects is the smaller grant and the one that works.
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterroles", "clusterrolebindings"]
+    verbs: ["patch"]
+    resourceNames:
+      - {{ include "test-env.teardownServiceAccountName" . }}-{{ .Release.Namespace }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

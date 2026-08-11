@@ -111,6 +111,38 @@ rules:
 If that token leaked, the worst it could do is delete the namespace it was
 already going to delete.
 
+**And a ClusterRole is not deleted with the namespace it names.** That is the
+whole reason its name carries the namespace — so a leftover can be found — and
+it was also a leak, in the one scenario this layer exists for. When CI comes
+back, `helm uninstall` removes the ClusterRole and its binding. When CI never
+comes back, nothing did: the namespace went and two grants stayed, each
+pointing at a namespace that no longer existed.
+
+The Job now hands both objects to the namespace as an owner, before it sleeps,
+and Kubernetes' garbage collector removes them with it:
+
+```yaml
+ownerReferences:
+  - apiVersion: v1
+    kind: Namespace
+    name: pr-123
+    uid: aa72c739-…        # the uid matters: it distinguishes this namespace
+    blockOwnerDeletion: false
+```
+
+An ownerReference rather than a second `delete` call, because the Job cannot
+remove its own permissions and keep them — deleting the binding first revokes
+the right to delete the namespace, and deleting it afterwards races the
+invalidation of its own token. The grant it needs for this is `patch` on
+exactly those two objects, by name.
+
+**This layer is now exercised on every pull request.** A job installs one
+environment that destroys itself and one that does not, waits for the first to
+disappear with nobody deleting it, runs `verify-teardown.sh` against it, and
+requires the second to still be standing — otherwise "the namespace vanished"
+would not be evidence of anything. Before that job existed, layer 3 had never
+once been observed to work: layer 2 always reached the namespace first.
+
 **Off by default.** Pointing this at an environment somebody is using
 interactively via `local-demo.sh` would delete it out from under them. CI turns it
 on because CI environments are unattended by definition.

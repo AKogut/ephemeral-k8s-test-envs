@@ -1006,6 +1006,129 @@ jobs:
         if: always()
         run: kind delete cluster --name netpol
 
+  self-destruct:
+    name: The self-destruct layer fires, and leaves nothing
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: selfdestruct
+          wait: 120s
+
+      - name: Put the images into the cluster
+        uses: ./.github/actions/load-images
+        with:
+          cluster: selfdestruct
+          registry: ${{ env.REGISTRY }}
+          namespace: ${{ needs.build.outputs.namespace }}
+          tag: ${{ needs.build.outputs.tag }}
+          from-registry: ${{ env.CAN_WRITE }}
+
+      - name: Install one environment that will destroy itself, and one that will not
+        run: |
+          set -euo pipefail
+          # The third teardown layer exists for the case where CI never comes
+          # back: a cancelled workflow, a dead runner. In every ordinary run
+          # the pipeline's own `helm uninstall` beats it to the namespace, so
+          # its success has never been observed — invisible by construction,
+          # which is exactly how the NetworkPolicy stayed wrong for releases.
+          #
+          # No --wait: readiness is not what is under test here, and the clock
+          # on the Job starts as soon as its pod does.
+          common=(--set "image.registry=${REGISTRY}"
+                  --set "image.namespace=${{ needs.build.outputs.namespace }}"
+                  --set "image.tag=${{ needs.build.outputs.tag }}"
+                  --set "image.pullPolicy=Never"
+                  --set "tests.enabled=false"
+                  --set "aggregator.enabled=false"
+                  --set "minio.enabled=false")
+
+          helm install doomed ./charts/test-env --namespace doomed --create-namespace \
+            "${common[@]}" \
+            --set "teardown.selfDestruct.enabled=true" \
+            --set "teardown.selfDestruct.afterSeconds=120"
+
+          # The control. Without it, "the namespace disappeared" could mean the
+          # cluster ate it, and the test would pass for the wrong reason.
+          helm install survivor ./charts/test-env --namespace survivor --create-namespace \
+            "${common[@]}" \
+            --set "teardown.selfDestruct.enabled=false"
+
+      - name: The namespace owns the cluster-scoped objects it would leave behind
+        run: |
+          set -euo pipefail
+          # The mechanism, checked before the outcome. Deleting a namespace does
+          # not delete ClusterRoles or ClusterRoleBindings, so the Job hands
+          # them to the namespace as an owner before it sleeps — which is also
+          # why this is asserted while the namespace still exists.
+          uid=$(kubectl get namespace doomed -o jsonpath='{.metadata.uid}')
+          for i in $(seq 1 30); do
+            owner=$(kubectl get clusterrole doomed-test-env-teardown-doomed \
+              -o jsonpath='{.metadata.ownerReferences[0].uid}' 2>/dev/null || true)
+            [ -n "$owner" ] && break
+            sleep 4
+          done
+
+          kubectl get clusterrole,clusterrolebinding doomed-test-env-teardown-doomed \
+            -o jsonpath='{range .items[*]}{.kind}{" owner="}{.metadata.ownerReferences[0].kind}{"/"}{.metadata.ownerReferences[0].uid}{"\n"}{end}'
+
+          if [ "$owner" != "$uid" ]; then
+            echo "::error::the ClusterRole is not owned by the namespace (owner=$owner, namespace=$uid)"
+            kubectl -n doomed logs -l app.kubernetes.io/component=teardown --tail=30 || true
+            exit 1
+          fi
+          echo "confirmed: the namespace ($uid) owns its teardown RBAC"
+
+      - name: Nobody deletes it, and it goes anyway
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 40); do
+            if ! kubectl get namespace doomed >/dev/null 2>&1; then
+              echo "the namespace deleted itself after ~$((i * 10))s"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::the namespace was still there after 400s"
+          kubectl -n doomed get jobs,pods
+          kubectl -n doomed logs -l app.kubernetes.io/component=teardown --tail=40 || true
+          exit 1
+
+      - name: And it left nothing cluster-scoped behind
+        run: |
+          # The bug this job was written to catch. The self-destruct path used
+          # to delete only the namespace, leaving a ClusterRole and a
+          # ClusterRoleBinding granting delete on a namespace that no longer
+          # existed — verified in kind before the fix, and this is what keeps
+          # it fixed.
+          ./scripts/verify-teardown.sh --namespace doomed --release doomed
+
+      - name: The control is still standing
+        run: |
+          set -euo pipefail
+          if ! kubectl get namespace survivor >/dev/null 2>&1; then
+            echo "::error::the environment without a self-destruct Job disappeared too — the test above proves nothing"
+            exit 1
+          fi
+          echo "confirmed: without the Job, the namespace stays"
+
+      - name: Tear down the control
+        if: always()
+        run: |
+          helm uninstall survivor -n survivor --wait --timeout 3m || true
+          kubectl delete namespace survivor --wait=true --timeout=3m || true
+
+      - name: Delete the cluster
+        if: always()
+        run: kind delete cluster --name selfdestruct || true
+
   postgres-environment:
     name: An environment on Postgres
     runs-on: ubuntu-latest
