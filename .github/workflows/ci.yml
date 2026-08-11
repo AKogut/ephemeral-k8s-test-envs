@@ -741,6 +741,11 @@ jobs:
 
       - name: The whole suite passes against Postgres
         run: |
+          # Created here rather than left to Docker, which would make it root
+          # while the container runs as uid 1000. Invisible on macOS, fatal on
+          # Linux — this is the first job to run the suite as a container.
+          mkdir -p results && chmod a+rwX results
+
           docker compose -f docker-compose.yml -f docker-compose.postgres.yml \
             --profile test run --rm api-tests
 
