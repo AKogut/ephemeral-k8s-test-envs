@@ -136,6 +136,38 @@ the right to delete the namespace, and deleting it afterwards races the
 invalidation of its own token. The grant it needs for this is `patch` on
 exactly those two objects, by name.
 
+### Measured over time, not only per run
+
+Each of the three layers is asserted inside a run. That says nothing about
+whether they keep holding, so a scheduled workflow reads the pipeline's own
+history — the only fleet this project has, since no environment outlives the
+run that made it:
+
+```
+| Environments stood up          | 11     |
+| Teardown proved                | 11     |
+| Self-destruct proved           | 1      |
+| Median environment lifetime    | 1m 31s |
+| Longest                        | 1m 37s |
+```
+
+It goes red on a **broken guarantee** — an environment never proved gone, a
+self-destruct that failed, a lifetime far enough out to mean something changed
+— and not on a run that was merely slower. A report that turns red because a
+runner had a bad day is a report people learn to ignore.
+
+Run it against any window by hand:
+
+```bash
+npm run fleet -- --runs 20 --max-lifetime 900
+```
+
+Two things it deliberately does not measure. **Live environment count**: always
+zero, because the cluster is destroyed with the job, so a namespace-age check
+would look like observability and measure nothing. **Cost in node-hours**: the
+minutes are free on a public repository and the `timing` endpoint reports zero;
+wall clock is the honest proxy until there is a cluster somebody pays for.
+
 **This layer is now exercised on every pull request.** A job installs one
 environment that destroys itself and one that does not, waits for the first to
 disappear with nobody deleting it, runs `verify-teardown.sh` against it, and

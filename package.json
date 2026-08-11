@@ -30,6 +30,7 @@
     "test:api": "npm --prefix tests/api test",
     "shard:plan": "npm --prefix scripts run shard -- --dir ../tests/api/specs --weights ../tests/api/test-weights.json --total 4 --format plan",
     "weights:update": "npm --prefix scripts run weights -- --weights ../tests/api/test-weights.json --input ../results/merged/allure-results",
+    "fleet": "npm --prefix scripts run fleet --",
     "demo:shards": "./scripts/local-demo.sh --shards 8",
     "compose:test": "mkdir -p results && chmod a+rwX results && docker compose --profile test run --rm api-tests",
     "compose:postgres": "docker compose -f docker-compose.yml -f docker-compose.postgres.yml up --build -d --wait --wait-timeout 300",

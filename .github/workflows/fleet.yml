@@ -1,0 +1,58 @@
+name: Fleet
+
+# What the per-run checks cannot say.
+#
+# `verify-teardown.sh` proves one environment is gone. The self-destruct job
+# proves the third layer fires. Both are assertions about a single run, and a
+# guarantee that held the last time anybody looked is a different thing from one
+# that holds every time.
+#
+# So this reads the pipeline's own history — the only fleet an
+# ephemeral-environment project has, because no environment outlives the run
+# that made it — and goes red when a guarantee broke, not when a runner had a
+# slow day.
+
+on:
+  schedule:
+    # Monday morning. Often enough that a regression is caught within a week,
+    # rare enough that the report is read rather than filtered.
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: How many runs to read
+        type: number
+        default: 20
+      max_lifetime_seconds:
+        description: Fail if an environment lived longer than this
+        type: number
+        default: 900
+
+permissions:
+  contents: read
+  # To read the run history. Nothing here writes anything.
+  actions: read
+
+jobs:
+  report:
+    name: What the run history says
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Build the reporting tool
+        run: |
+          npm --prefix scripts ci
+          npm --prefix scripts run build
+
+      - name: Read the fleet
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node scripts/dist/fleet-report.js \
+            --runs "${{ inputs.runs || 20 }}" \
+            --max-lifetime "${{ inputs.max_lifetime_seconds || 900 }}"
