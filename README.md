@@ -351,13 +351,13 @@ Different from the list above. Those are omissions with an argument. These are
 |---|---|
 | ~~[#82](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/82) Results on a shared `ReadWriteOnce` volume~~ | Done — results go to object storage; CI asserts the shards spread across nodes |
 | ~~[#83](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/83) No `ResourceQuota` per namespace~~ | Done — the quota is computed from the release and enforced |
+| ~~[#85](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/85) Shard weights maintained by hand~~ | Done — measured from a run, and CI publishes fresh ones |
 | [#84](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/84) No preview URL | Only reachable by `port-forward`, so only by engineers with cluster access |
-| [#85](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/85) Shard weights maintained by hand | Balance decays silently as the suite grows |
 | [#86](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/86) Only ever run on `kind` | "No provider dependency" is an argument, not yet a result |
 | [#87](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/87) No fleet metrics | Teardown is proven per run, never measured over time |
 | [#88](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/88) A pattern, not a platform | Adopting it means copying files |
 | [#89](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/89) No networked database | StatefulSets, migrations and readiness gates go unexercised |
-| [#90](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/90) NetworkPolicy never enforced | kind's CNI ignores it, so it has been read but never executed |
+| ~~[#90](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/90) NetworkPolicy never enforced~~ | Done — enforced against Calico in CI, with a negative test and a control |
 
 → [the full milestone](https://github.com/AKogut/ephemeral-k8s-test-envs/milestone/7)
 

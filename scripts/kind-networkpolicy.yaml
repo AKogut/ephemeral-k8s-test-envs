@@ -1,0 +1,20 @@
+# A cluster whose CNI actually enforces NetworkPolicy.
+#
+# kind ships kindnet, which implements pod networking and ignores NetworkPolicy
+# entirely. Objects apply, nothing is dropped, and a wrong policy is
+# indistinguishable from a correct one — which is how the chart's policy stayed
+# unexercised through every release so far (#90).
+#
+# The default CNI is therefore disabled and Calico installed in its place. The
+# pod subnet matches Calico's own default IP pool so its manifest needs no
+# patching.
+#
+#   kind create cluster --name netpol --config scripts/kind-networkpolicy.yaml
+#   kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.29.1/manifests/calico.yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+networking:
+  disableDefaultCNI: true
+  podSubnet: "192.168.0.0/16"
+nodes:
+  - role: control-plane

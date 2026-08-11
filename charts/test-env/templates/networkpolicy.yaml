@@ -1,17 +1,29 @@
 {{- if .Values.networkPolicy.enabled }}
 {{/*
-Default-deny plus the three flows this stack actually needs:
+Default-deny, plus exactly the flows this stack needs.
 
-    anything in-namespace  -> gateway
-    gateway                -> auth, notes
-    notes                  -> auth            (token verification)
-    everything             -> kube-dns
+Every rule below was arrived at by running the suite against Calico and reading
+what broke. The version this replaces had been rendered, linted and read for
+several releases without a single packet ever being evaluated against it — kind's
+default CNI ignores NetworkPolicy — and it was wrong in three ways that only
+enforcement could reveal (#90):
 
-Disabled by default because kind's default CNI does not enforce NetworkPolicy —
-applying these there would produce YAML that looks like isolation while
-enforcing nothing, which is worse than not claiming it. Enable it on a cluster
-running Calico or Cilium.
+  - the shard pods had no egress at all, so the suite could not reach the
+    gateway it exists to test;
+  - the aggregator had no egress to the API server, so the initContainer that
+    waits for the shard Job failed on every poll;
+  - MinIO was not mentioned, because the policy predates it.
+
+Ingress and egress are both evaluated, so a flow needs a rule at each end. That
+is the part most easily got wrong by reading: an ingress rule that looks
+complete is useless if the sender's egress is denied.
 */}}
+{{- $gateway := include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.gateway.component) -}}
+{{- $auth := include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.auth.component) -}}
+{{- $notes := include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.notes.component) -}}
+{{- $tests := include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.tests.component) -}}
+{{- $aggregator := include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.aggregator.component) -}}
+{{- $minio := include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.minio.component) -}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -35,6 +47,10 @@ spec:
   policyTypes:
     - Egress
   egress:
+    # Not narrowed to kube-system: a namespaceSelector needs a label on that
+    # namespace, which this chart has no business setting on a cluster it is a
+    # guest in. Forgetting DNS is the classic way a policy takes an environment
+    # down while looking unrelated — every pod fails readiness at once.
     - ports:
         - protocol: UDP
           port: 53
@@ -50,7 +66,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.gateway.component) | nindent 6 }}
+      {{- $gateway | nindent 6 }}
   policyTypes:
     - Ingress
     - Egress
@@ -64,14 +80,14 @@ spec:
     - to:
         - podSelector:
             matchLabels:
-              {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.auth.component) | nindent 14 }}
+              {{- $auth | nindent 14 }}
       ports:
         - protocol: TCP
           port: {{ .Values.auth.port }}
     - to:
         - podSelector:
             matchLabels:
-              {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.notes.component) | nindent 14 }}
+              {{- $notes | nindent 14 }}
       ports:
         - protocol: TCP
           port: {{ .Values.notes.port }}
@@ -85,20 +101,20 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.auth.component) | nindent 6 }}
+      {{- $auth | nindent 6 }}
   policyTypes:
     - Ingress
   ingress:
     - from:
         - podSelector:
             matchLabels:
-              {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.gateway.component) | nindent 14 }}
+              {{- $gateway | nindent 14 }}
         - podSelector:
             matchLabels:
-              {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.notes.component) | nindent 14 }}
+              {{- $notes | nindent 14 }}
         - podSelector:
             matchLabels:
-              {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.tests.component) | nindent 14 }}
+              {{- $tests | nindent 14 }}
       ports:
         - protocol: TCP
           port: {{ .Values.auth.port }}
@@ -112,7 +128,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.notes.component) | nindent 6 }}
+      {{- $notes | nindent 6 }}
   policyTypes:
     - Ingress
     - Egress
@@ -120,10 +136,10 @@ spec:
     - from:
         - podSelector:
             matchLabels:
-              {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.gateway.component) | nindent 14 }}
+              {{- $gateway | nindent 14 }}
         - podSelector:
             matchLabels:
-              {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.tests.component) | nindent 14 }}
+              {{- $tests | nindent 14 }}
       ports:
         - protocol: TCP
           port: {{ .Values.notes.port }}
@@ -131,8 +147,137 @@ spec:
     - to:
         - podSelector:
             matchLabels:
-              {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.auth.component) | nindent 14 }}
+              {{- $auth | nindent 14 }}
       ports:
         - protocol: TCP
           port: {{ .Values.auth.port }}
+{{- if .Values.tests.enabled }}
+---
+{{/*
+The shard pods.
+
+They speak to the gateway for the suite proper, to auth and notes directly for
+the health assertions, and to the results bucket when they finish. Without this
+the whole suite sits waiting on /readyz — the failure that showed the previous
+policy had never been enforced.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "test-env.fullname" . }}-tests
+  labels:
+    {{- include "test-env.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- $tests | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- $gateway | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.gateway.port }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- $auth | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.auth.port }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- $notes | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.notes.port }}
+{{- if .Values.minio.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- $minio | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 9000
+{{- end }}
+{{- if .Values.minio.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "test-env.fullname" . }}-minio
+  labels:
+    {{- include "test-env.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- $minio | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- $tests | nindent 14 }}
+        - podSelector:
+            matchLabels:
+              {{- $aggregator | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 9000
+{{- end }}
+{{- if .Values.aggregator.enabled }}
+---
+{{/*
+The aggregator, and the self-destruct Job if it is enabled.
+
+Both talk to the Kubernetes API — one to wait for the shard Job, the other to
+delete the namespace. That destination cannot be selected by pod label: it is
+the API server, reached through a Service whose ClusterIP is translated to an
+address outside the cluster's pod network. So it is an ipBlock, narrowed to the
+two ports an API server listens on rather than to an address this chart cannot
+know. Set networkPolicy.apiServerCidr to tighten it where the address is known.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "test-env.fullname" . }}-cluster-api
+  labels:
+    {{- include "test-env.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values:
+          - {{ .Values.aggregator.component }}
+          # The teardown Job labels itself with this literal rather than a value,
+          # so the policy matches it the same way.
+          - teardown
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.networkPolicy.apiServerCidr | quote }}
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+{{- if .Values.minio.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- $minio | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 9000
+{{- end }}
+{{- end }}
+{{- end }}
 {{- end }}

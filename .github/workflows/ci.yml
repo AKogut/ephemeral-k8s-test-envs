@@ -40,6 +40,9 @@ env:
   # Pinned rather than :latest — a storage backend that changes under the tests
   # would turn a real regression and an upstream change into the same red build.
   MINIO_IMAGE: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+  # Pinned for the same reason: a CNI that changes under the policy tests would
+  # make an upstream change and a real regression look identical.
+  CALICO_MANIFEST: https://raw.githubusercontent.com/projectcalico/calico/v3.29.1/manifests/calico.yaml
 
 jobs:
   chart:
@@ -733,6 +736,108 @@ jobs:
           provenance: false
 
   # ------------------------------------------------- the ephemeral environment --
+  networkpolicy:
+    name: NetworkPolicy is enforced
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+      packages: read
+    env:
+      IMAGE_TAG: ${{ needs.build.outputs.tag }}
+      IMAGE_NAMESPACE: ${{ needs.build.outputs.namespace }}
+      NS: netpol
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Create a cluster whose CNI enforces policy
+        run: |
+          # kind's default CNI implements pod networking and ignores
+          # NetworkPolicy entirely, which is why the chart's policy went several
+          # releases while being wrong in three separate ways. Calico replaces it.
+          kind create cluster --name netpol --config scripts/kind-networkpolicy.yaml --wait 120s
+          kubectl apply -f "$CALICO_MANIFEST"
+          kubectl -n kube-system rollout status daemonset/calico-node --timeout=300s
+          kubectl wait --for=condition=Ready node --all --timeout=180s
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Side-load the images
+        run: |
+          for component in auth-service notes-service gateway api-tests aggregator; do
+            ref="${REGISTRY}/${IMAGE_NAMESPACE}/${component}:${IMAGE_TAG}"
+            docker pull "$ref"
+            kind load docker-image --name netpol "$ref"
+          done
+
+      - name: Install with the policy enforced
+        run: |
+          helm install netpol ./charts/test-env --namespace "$NS" --create-namespace \
+            --set "image.tag=${IMAGE_TAG}" \
+            --set "image.namespace=${IMAGE_NAMESPACE}" \
+            --set "tests.shards=2" \
+            --set "networkPolicy.enabled=true" \
+            --wait --timeout 6m
+
+      - name: The suite passes with every packet policed
+        run: |
+          # The positive half. A default-deny policy that lets nothing through
+          # would also pass a negative test, so this has to hold first.
+          if ! kubectl -n "$NS" wait --for=condition=complete --timeout=10m job/netpol-test-env-shards-r1; then
+            echo "::error::the suite could not run under the enforced policy"
+            kubectl -n "$NS" logs -l app.kubernetes.io/component=api-tests --tail=40
+            kubectl -n "$NS" get networkpolicy
+            exit 1
+          fi
+          kubectl -n "$NS" logs job/netpol-test-env-aggregate-r1 --tail=30 | grep -E 'Total|passed' || true
+
+      - name: A pod outside the environment is refused
+        run: |
+          # The negative half, and the one that makes the policy a claim rather
+          # than a document. An unlabelled pod in the same namespace must not
+          # reach the services.
+          kubectl -n "$NS" run intruder --image=busybox:1.36 --restart=Never --command -- sleep 300
+          kubectl -n "$NS" wait --for=condition=ready pod/intruder --timeout=120s
+
+          blocked=0
+          for target in netpol-test-env-auth:3001 netpol-test-env-notes:3002 netpol-test-env-minio:9000; do
+            if kubectl -n "$NS" exec intruder -- timeout 6 wget -q -O- -T 5 "http://$target/healthz" >/dev/null 2>&1; then
+              echo "::error::$target was reachable from an unlabelled pod"
+            else
+              echo "blocked: $target"
+              blocked=$((blocked + 1))
+            fi
+          done
+          [ "$blocked" = "3" ] || exit 1
+
+      - name: …and reachable once the policy is removed
+        run: |
+          # The control. Without it, "blocked" could mean a wrong port or a
+          # service that never resolved, and the negative test above would pass
+          # for entirely the wrong reason.
+          helm upgrade netpol ./charts/test-env --namespace "$NS" --reuse-values \
+            --set "networkPolicy.enabled=false" --wait --timeout 3m
+          sleep 5
+
+          reachable=0
+          for target in netpol-test-env-auth:3001 netpol-test-env-notes:3002; do
+            if kubectl -n "$NS" exec intruder -- timeout 6 wget -q -O- -T 5 "http://$target/healthz" >/dev/null 2>&1; then
+              echo "reachable without the policy: $target"
+              reachable=$((reachable + 1))
+            else
+              echo "::error::$target unreachable even with no policy — the negative test proves nothing"
+            fi
+          done
+          [ "$reachable" = "2" ] || exit 1
+
+      - name: Delete the cluster
+        if: always()
+        run: kind delete cluster --name netpol
+
   ephemeral-environment:
     name: Deploy, test, aggregate, tear down
     runs-on: ubuntu-latest
