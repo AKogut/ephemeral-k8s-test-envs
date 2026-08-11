@@ -1026,6 +1026,9 @@ jobs:
         uses: helm/kind-action@v1
         with:
           cluster_name: preview
+          # ingress-nginx's kind manifest wants a node labelled
+          # ingress-ready=true, which kind does not set on its own.
+          config: scripts/kind-ingress.yaml
           wait: 120s
 
       - name: Put the images into the cluster
@@ -1104,8 +1107,20 @@ jobs:
           kubectl -n "$NS" wait --for=condition=ready pod/urlprobe --timeout=120s
 
           controller=http://ingress-nginx-controller.ingress-nginx.svc.cluster.local
-          body=$(kubectl -n "$NS" exec urlprobe -- \
-            curl -fsS --max-time 15 -H "Host: ${NS}.${DOMAIN}" "$controller/readyz")
+
+          # Retried, because creating an Ingress and having it routed are two
+          # different moments: the controller answers 503 for the rule it has
+          # not synced yet. Observed locally — first request 503, the same one
+          # 200 a few seconds later — so a single immediate curl would be a
+          # flake shipped as a check.
+          body=""
+          for _ in $(seq 1 20); do
+            body=$(kubectl -n "$NS" exec urlprobe -- \
+              curl -fsS --max-time 15 -H "Host: ${NS}.${DOMAIN}" "$controller/readyz" 2>/dev/null || true)
+            [ -n "$body" ] && break
+            sleep 3
+          done
+          [ -n "$body" ] || { echo "::error::the preview URL never answered"; exit 1; }
           echo "$body"
 
           # /readyz is the gateway's own, and it names the service that answered.
