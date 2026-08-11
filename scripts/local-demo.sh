@@ -26,6 +26,7 @@ RESULTS_DIR="${RESULTS_DIR:-$REPO_ROOT/results}"
 KEEP=false
 RUN_TESTS=true
 CLEANUP_ONLY=false
+RESULTS_BACKEND="${RESULTS_BACKEND:-pvc}"
 KEEP_CLUSTER=false
 
 # ------------------------------------------------------------------ helpers --
@@ -56,6 +57,7 @@ while [[ $# -gt 0 ]]; do
     --keep-cluster) KEEP=true; KEEP_CLUSTER=true; shift ;;
     --no-tests)     RUN_TESTS=false; KEEP=true; shift ;;
     --shards)       SHARDS="${2:?--shards needs a value}"; shift 2 ;;
+    --results)      RESULTS_BACKEND="${2:?--results needs pvc or s3}"; shift 2 ;;
     --cleanup-only) CLEANUP_ONLY=true; shift ;;
     --namespace)    NAMESPACE="${2:?--namespace needs a value}"; shift 2 ;;
     --tag)          IMAGE_TAG="${2:?--tag needs a value}"; shift 2 ;;
@@ -176,6 +178,8 @@ helm install "$RELEASE" ./charts/test-env \
   --set "tests.enabled=$RUN_TESTS" \
   --set "tests.shards=$SHARDS" \
   --set "aggregator.enabled=$RUN_TESTS" \
+  --set "tests.results.backend=$RESULTS_BACKEND" \
+  --set "minio.enabled=$([[ "$RESULTS_BACKEND" == s3 ]] && echo true || echo false)" \
   --wait --timeout 5m
 ok "release installed"
 

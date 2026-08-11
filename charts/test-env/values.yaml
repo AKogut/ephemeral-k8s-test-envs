@@ -158,15 +158,64 @@ tests:
   tolerations: []
   affinity: {}
 
-  # -- Shared volume the shards write to and the aggregator reads from.
+  # -- How per-shard results reach the aggregator.
   results:
+    # pvc — a shared volume. Simple, and the reason every shard pod has to be
+    #       scheduled onto one node: ReadWriteOnce attaches to exactly one, so
+    #       a multi-node cluster leaves shards Pending on a volume conflict.
+    # s3  — object storage. Pods talk to it over the network, so they can be
+    #       scheduled anywhere. See issue #82.
+    backend: pvc
+
     size: 1Gi
-    # ReadWriteOnce is enough on a single-node kind cluster, where every pod
-    # lands on the same node. On a multi-node cluster set this to
-    # ReadWriteMany with a storage class that supports it — see
-    # docs/sharding-strategy.md.
+    # Only read when backend is pvc. On a multi-node cluster this has to become
+    # ReadWriteMany with a storage class that supports it — which is the
+    # infrastructure dependency the s3 backend exists to avoid.
     accessMode: ReadWriteOnce
     storageClass: ""
+
+    s3:
+      # Left empty while minio.enabled, the chart points this at the MinIO it
+      # deploys. Set it to use a bucket that already exists instead.
+      endpoint: ""
+      bucket: results
+      region: us-east-1
+      # MinIO has no per-bucket DNS, so path style is the in-cluster default.
+      forcePathStyle: true
+      # Whether the uploader may create the bucket. True for the throwaway
+      # MinIO; against a real bucket the credentials usually cannot, and the
+      # bucket is already there.
+      createBucket: true
+      # A Secret holding `access-key-id` and `secret-access-key`. Generated per
+      # release when empty, the same way the JWT signing key is.
+      existingSecret: ""
+
+# ---------------------------------------------------------------------- minio -
+
+# -- Object storage for results, inside the environment.
+#
+# A single pod on an emptyDir: the results live and die with the namespace, so
+# there is nothing here worth persisting. The point is not durability — it is
+# that every shard reaches it *over the network* rather than through a mounted
+# volume, which is what stops the storage dictating where pods run.
+minio:
+  enabled: false
+  component: minio
+  image:
+    repository: quay.io/minio/minio
+    # Pinned: storage that changes under the tests would make a real regression
+    # and an upstream change produce the same failure.
+    tag: RELEASE.2025-09-07T16-13-09Z
+    pullPolicy: IfNotPresent
+  storage:
+    sizeLimit: 2Gi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
 
 # ---------------------------------------------------------------- aggregator --
 

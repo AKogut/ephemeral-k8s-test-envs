@@ -22,6 +22,8 @@
 import { copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { parseArgs, resolveOption } from './cli.js';
+import { s3FromEnv } from './s3.js';
+import { downloadPrefix, environmentPrefix, uploadDirectory } from './sync.js';
 import {
   buildSummary,
   renderMarkdownSummary,
@@ -123,6 +125,19 @@ async function main(): Promise<number> {
   const mergedResults = path.join(output, 'allure-results');
   await mkdir(mergedResults, { recursive: true });
 
+  // With object storage the shards wrote to their own pods, not to a volume
+  // this one can see, so the run is pulled down first. Everything after this
+  // point reads a directory tree exactly as it always did — which is the point
+  // of doing it here rather than threading a storage client through the merge.
+  const storage = s3FromEnv();
+  if (storage) {
+    const prefix = environmentPrefix(envId);
+    const { files, bytes } = await downloadPrefix(storage, prefix, input);
+    process.stdout.write(
+      `Downloaded ${files.length} file(s), ${bytes} bytes from ${prefix}/ into ${input}\n`,
+    );
+  }
+
   const shardDirs = await findShardDirectories(input, subdir);
   process.stdout.write(`Found ${shardDirs.length} shard director(ies) under ${input}\n`);
 
@@ -198,6 +213,16 @@ async function main(): Promise<number> {
 
   process.stdout.write(`\n${markdown}\n`);
   process.stdout.write(`Merged ${filesCopied} artefact(s) into ${mergedResults}\n`);
+
+  // The merged report goes back to the bucket, which is where fetch-results.sh
+  // looks. Without this the merge would exist only inside a Job pod that is
+  // about to be garbage collected — the same problem the results-exporter pod
+  // was invented to work around on the volume backend.
+  if (storage) {
+    const prefix = `${environmentPrefix(envId)}/merged`;
+    const { files, bytes } = await uploadDirectory(storage, output, prefix);
+    process.stdout.write(`Uploaded ${files.length} file(s), ${bytes} bytes to ${prefix}/\n`);
+  }
 
   // Distinguishes "aggregation broke" (1) from "aggregation worked, tests
   // failed" (2) so CI can tell an infrastructure problem from a real failure.

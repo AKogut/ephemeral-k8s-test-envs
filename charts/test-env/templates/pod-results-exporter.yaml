@@ -1,4 +1,9 @@
-{{- if and .Values.tests.enabled .Values.resultsExporter.enabled }}
+{{- if and .Values.tests.enabled .Values.resultsExporter.enabled (eq (include "test-env.resultsOnS3" .) "false") }}
+{{/*
+Not rendered when results go to object storage: there is no volume to hold open
+and nothing for `kubectl cp` to copy from. `fetch-results.sh` reads the bucket
+instead.
+*/}}
 {{/*
 A deliberately boring pod whose only job is to stay running with the results
 volume mounted.

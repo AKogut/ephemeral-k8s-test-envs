@@ -50,6 +50,12 @@ jobs:
 
       - uses: azure/setup-helm@v5
 
+      - name: Install the assertion script's dependency
+        # Hoisted out of the step that used to do it inline: two steps now run
+        # assert-security-defaults.py, and the first of them was the one
+        # installing it.
+        run: python3 -m pip install --quiet pyyaml
+
       - name: Lint with both value sets
         run: |
           helm lint charts/test-env
@@ -70,11 +76,32 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: Renders and stays secure on the object-storage backend
+        run: |
+          # The s3 backend adds a Deployment and removes the volume, so both the
+          # render and the security assertions have to hold for it too — not
+          # only for the default the other steps exercise.
+          helm template ci charts/test-env --namespace ci \
+            -f charts/test-env/values-ci.yaml --set image.tag=deadbeef \
+            --set tests.results.backend=s3 --set minio.enabled=true > /tmp/rendered-s3.yaml
+
+          grep '^kind:' /tmp/rendered-s3.yaml | sort | uniq -c
+
+          # The whole point of this backend: no shared volume, and therefore
+          # nothing tying the shard pods to one node.
+          if grep -q 'kind: PersistentVolumeClaim' /tmp/rendered-s3.yaml; then
+            echo "::error::the s3 backend still renders a PersistentVolumeClaim"
+            exit 1
+          fi
+
+          python3 scripts/assert-security-defaults.py /tmp/rendered-s3.yaml
+
       - name: Reject invalid values
         run: |
           # Testing that a chart renders is easy. Testing that it *refuses* to
           # render nonsense is what catches a guard that quietly stopped guarding.
-          for bad in "tests.shards=0" "tests.shards=999" "notes.authMode=nope" "notes.authMode="; do
+          for bad in "tests.shards=0" "tests.shards=999" "notes.authMode=nope" "notes.authMode=" \
+                     "tests.results.backend=nope" "tests.results.backend=s3" "minio.enabled=true"; do
             if helm template ci charts/test-env --set "$bad" >/dev/null 2>&1; then
               echo "::error::chart accepted invalid value: $bad"
               exit 1
@@ -83,9 +110,7 @@ jobs:
           done
 
       - name: Security defaults are actually applied
-        run: |
-          python3 -m pip install --quiet pyyaml
-          python3 scripts/assert-security-defaults.py /tmp/rendered.yaml
+        run: python3 scripts/assert-security-defaults.py /tmp/rendered.yaml
 
   sharding:
     name: Shard planner

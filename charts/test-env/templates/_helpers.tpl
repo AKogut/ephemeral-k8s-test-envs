@@ -177,8 +177,81 @@ Environment variables every service shares.
       fieldPath: metadata.namespace
 {{- end -}}
 
+{{/* True when results go to object storage rather than a shared volume. */}}
+{{- define "test-env.resultsOnS3" -}}
+{{- eq .Values.tests.results.backend "s3" -}}
+{{- end -}}
+
+{{- define "test-env.minioServiceName" -}}
+{{- printf "%s-minio" (include "test-env.fullname" .) -}}
+{{- end -}}
+
+{{- define "test-env.s3SecretName" -}}
+{{- .Values.tests.results.s3.existingSecret | default (printf "%s-s3" (include "test-env.fullname" .)) -}}
+{{- end -}}
+
+{{/*
+The endpoint pods should use.
+
+An explicit value wins, so an environment can be pointed at a real bucket. With
+minio.enabled and nothing explicit, it is the Service this chart creates.
+*/}}
+{{- define "test-env.s3Endpoint" -}}
+{{- if .Values.tests.results.s3.endpoint -}}
+{{- .Values.tests.results.s3.endpoint -}}
+{{- else -}}
+{{- printf "http://%s:9000" (include "test-env.minioServiceName" .) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The storage environment shared by the shard pods and the aggregator.
+
+One definition rather than two copies: the uploader and the downloader
+disagreeing about the bucket or the endpoint is a failure that would look like
+missing results rather than like a configuration mistake.
+*/}}
+{{- define "test-env.resultsEnv" -}}
+{{- if eq (include "test-env.resultsOnS3" .) "true" }}
+- name: RESULTS_S3_ENDPOINT
+  value: {{ include "test-env.s3Endpoint" . | quote }}
+- name: RESULTS_S3_BUCKET
+  value: {{ .Values.tests.results.s3.bucket | quote }}
+- name: RESULTS_S3_REGION
+  value: {{ .Values.tests.results.s3.region | quote }}
+- name: RESULTS_S3_FORCE_PATH_STYLE
+  value: {{ .Values.tests.results.s3.forcePathStyle | quote }}
+- name: RESULTS_S3_CREATE_BUCKET
+  value: {{ .Values.tests.results.s3.createBucket | quote }}
+- name: RESULTS_S3_ACCESS_KEY_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "test-env.s3SecretName" . }}
+      key: access-key-id
+- name: RESULTS_S3_SECRET_ACCESS_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "test-env.s3SecretName" . }}
+      key: secret-access-key
+{{- end }}
+{{- end -}}
+
 {{/* Validation that fails the render rather than the rollout. */}}
 {{- define "test-env.validate" -}}
+{{- if not (has .Values.tests.results.backend (list "pvc" "s3")) -}}
+{{- fail (printf "tests.results.backend must be pvc or s3, got %q" .Values.tests.results.backend) -}}
+{{- end -}}
+{{- if eq .Values.tests.results.backend "s3" -}}
+{{- if and (not .Values.minio.enabled) (not .Values.tests.results.s3.endpoint) -}}
+{{- fail "tests.results.backend=s3 needs somewhere to write: set minio.enabled=true or tests.results.s3.endpoint" -}}
+{{- end -}}
+{{- if not .Values.tests.results.s3.bucket -}}
+{{- fail "tests.results.backend=s3 requires tests.results.s3.bucket" -}}
+{{- end -}}
+{{- end -}}
+{{- if and .Values.minio.enabled (ne .Values.tests.results.backend "s3") -}}
+{{- fail "minio.enabled has no effect unless tests.results.backend=s3 — one of the two is a mistake" -}}
+{{- end -}}
 {{- if lt (int .Values.tests.shards) 1 -}}
 {{- fail (printf "tests.shards must be at least 1, got %v" .Values.tests.shards) -}}
 {{- end -}}

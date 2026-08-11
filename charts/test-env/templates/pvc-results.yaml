@@ -1,4 +1,4 @@
-{{- if .Values.tests.enabled }}
+{{- if and .Values.tests.enabled (eq (include "test-env.resultsOnS3" .) "false") }}
 {{/*
 Shared volume for test results.
 
