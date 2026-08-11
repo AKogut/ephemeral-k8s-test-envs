@@ -165,7 +165,12 @@ tests:
     #       a multi-node cluster leaves shards Pending on a volume conflict.
     # s3  — object storage. Pods talk to it over the network, so they can be
     #       scheduled anywhere. See issue #82.
-    backend: pvc
+    #
+    # s3 is the default because pvc is only safe where its cost cannot be
+    # observed: on one node. Given more, a ReadWriteOnce volume pulls every
+    # shard onto the node it attached to, the run stays green, and the reported
+    # speedup describes a single machine.
+    backend: s3
 
     size: 1Gi
     # Only read when backend is pvc. On a multi-node cluster this has to become
@@ -194,12 +199,16 @@ tests:
 
 # -- Object storage for results, inside the environment.
 #
+# Only deployed when tests.results.backend is s3; with the volume backend this
+# is simply ignored rather than being an error, so switching backends is one
+# flag and not two.
+#
 # A single pod on an emptyDir: the results live and die with the namespace, so
 # there is nothing here worth persisting. The point is not durability — it is
 # that every shard reaches it *over the network* rather than through a mounted
 # volume, which is what stops the storage dictating where pods run.
 minio:
-  enabled: false
+  enabled: true
   component: minio
   image:
     repository: quay.io/minio/minio

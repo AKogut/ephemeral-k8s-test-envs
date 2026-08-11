@@ -73,7 +73,6 @@ tests:
       memory: 512Mi
   results:
     size: 512Mi
-    accessMode: ReadWriteOnce
 
 aggregator:
   enabled: true

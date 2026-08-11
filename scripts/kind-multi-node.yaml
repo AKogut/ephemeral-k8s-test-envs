@@ -1,0 +1,19 @@
+# A cluster with more than one worker.
+#
+# This exists to make the shard pods land on *different nodes*, which is the
+# only way to test the property #82 is about. On the single-node cluster the
+# rest of this project uses, a shared ReadWriteOnce volume works fine — every
+# pod is on the same machine, so nothing ever notices that the volume can only
+# attach to one.
+#
+# Two workers rather than more: the point is that shards are spread, and two
+# nodes prove that as well as ten while costing a quarter of the memory on a
+# CI runner.
+#
+#   kind create cluster --name ephemeral-test-envs --config scripts/kind-multi-node.yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+  - role: worker
+  - role: worker
