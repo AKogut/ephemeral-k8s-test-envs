@@ -26,7 +26,7 @@ RESULTS_DIR="${RESULTS_DIR:-$REPO_ROOT/results}"
 KEEP=false
 RUN_TESTS=true
 CLEANUP_ONLY=false
-RESULTS_BACKEND="${RESULTS_BACKEND:-pvc}"
+RESULTS_BACKEND="${RESULTS_BACKEND:-s3}"
 KEEP_CLUSTER=false
 
 # ------------------------------------------------------------------ helpers --

@@ -249,9 +249,7 @@ missing results rather than like a configuration mistake.
 {{- fail "tests.results.backend=s3 requires tests.results.s3.bucket" -}}
 {{- end -}}
 {{- end -}}
-{{- if and .Values.minio.enabled (ne .Values.tests.results.backend "s3") -}}
-{{- fail "minio.enabled has no effect unless tests.results.backend=s3 — one of the two is a mistake" -}}
-{{- end -}}
+
 {{- if lt (int .Values.tests.shards) 1 -}}
 {{- fail (printf "tests.shards must be at least 1, got %v" .Values.tests.shards) -}}
 {{- end -}}

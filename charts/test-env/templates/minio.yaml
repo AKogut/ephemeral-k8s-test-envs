@@ -1,4 +1,4 @@
-{{- if and .Values.tests.enabled .Values.minio.enabled }}
+{{- if and .Values.tests.enabled .Values.minio.enabled (eq (include "test-env.resultsOnS3" .) "true") }}
 {{/*
 Object storage for this environment's results.
 

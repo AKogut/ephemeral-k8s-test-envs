@@ -100,8 +100,12 @@ jobs:
         run: |
           # Testing that a chart renders is easy. Testing that it *refuses* to
           # render nonsense is what catches a guard that quietly stopped guarding.
+          # The storage case is written as a pair because the defaults satisfy
+          # each half on its own: s3 is the default backend and minio is on, so
+          # a single --set no longer describes an invalid chart.
           for bad in "tests.shards=0" "tests.shards=999" "notes.authMode=nope" "notes.authMode=" \
-                     "tests.results.backend=nope" "tests.results.backend=s3" "minio.enabled=true"; do
+                     "tests.results.backend=nope" \
+                     "tests.results.backend=s3,minio.enabled=false"; do
             if helm template ci charts/test-env --set "$bad" >/dev/null 2>&1; then
               echo "::error::chart accepted invalid value: $bad"
               exit 1
@@ -735,7 +739,12 @@ jobs:
         uses: helm/kind-action@v1
         with:
           cluster_name: ephemeral-test-envs
-          wait: 120s
+          # Two workers, so shard pods have somewhere else to go. On a
+          # single-node cluster the property asserted below cannot fail, which
+          # is exactly how the shared-volume backend survived to v1.0 without
+          # anyone noticing it confined every shard to one machine.
+          config: scripts/kind-multi-node.yaml
+          wait: 180s
 
       - uses: docker/login-action@v4
         with:
@@ -796,6 +805,47 @@ jobs:
               --tail=100 || echo "(no logs for shard $index)"
             echo "::endgroup::"
           done
+
+      - name: The shards actually spread across the cluster
+        run: |
+          # The acceptance test for #82, and the reason this job runs on a
+          # multi-node cluster at all.
+          #
+          # It is deliberately not "the suite passed on more than one node" —
+          # it always did. A ReadWriteOnce volume carries node affinity, so
+          # every pod mounting it is scheduled onto the one node it attached
+          # to. The run stays green and the parallelism quietly collapses onto
+          # a single machine, which is worse than a failure because nothing
+          # says so.
+          ns="${{ steps.env.outputs.namespace }}"
+          job="${{ steps.env.outputs.release }}-test-env-shards-r1"
+
+          # `grep -c` exits 1 on no matches, which `bash -e` would treat as a
+          # step failure, so every count is guarded.
+          nodes=$(kubectl -n "$ns" get pods \
+            -l "batch.kubernetes.io/job-name=$job" \
+            -o jsonpath='{range .items[*]}{.spec.nodeName}{"\n"}{end}' \
+            | sort -u | grep -c . || true)
+
+          # kubectl's jsonpath has no negation, so schedulable capacity is
+          # total nodes minus the ones carrying a NoSchedule taint — which on
+          # kind is the control plane.
+          total=$(kubectl get nodes --no-headers | grep -c . || true)
+          tainted=$(kubectl get nodes \
+            -o jsonpath='{range .items[*]}{.spec.taints[*].effect}{"\n"}{end}' \
+            | grep -c NoSchedule || true)
+          schedulable=$((total - tainted))
+
+          kubectl -n "$ns" get pods -l "batch.kubernetes.io/job-name=$job" \
+            -o custom-columns='POD:.metadata.name,NODE:.spec.nodeName' --no-headers
+
+          echo "shard pods ran on $nodes node(s); $schedulable are schedulable"
+
+          if [ "$schedulable" -gt 1 ] && [ "$nodes" -lt 2 ]; then
+            echo "::error::every shard landed on one node — storage is dictating placement again"
+            exit 1
+          fi
+          printf '| Shard spread | %s of %s schedulable nodes |\n' "$nodes" "$schedulable" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Aggregate results
         continue-on-error: true
