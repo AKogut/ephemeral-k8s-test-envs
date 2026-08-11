@@ -49,8 +49,7 @@ spec:
               value: notes-service
             - name: PORT
               value: {{ .Values.notes.port | quote }}
-            - name: DATABASE_PATH
-              value: /data/notes.sqlite
+            {{- include "test-env.databaseEnv" (dict "context" . "database" "notes") | nindent 12 }}
             - name: AUTH_MODE
               value: {{ .Values.notes.authMode | quote }}
             # Cluster DNS: this is the service-to-service hop the environment

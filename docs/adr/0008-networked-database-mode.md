@@ -60,6 +60,24 @@ splitting the databases fixes what the symptom was pointing at, and makes each
 service's advisory lock correct without coordination, since those locks are
 scoped to a database.
 
+**The migration is a plain Job, not a Helm hook.** A `pre-install` hook runs
+before the chart's own objects exist, so it would look for a Postgres this
+release has not created yet. A `post-install` hook runs after `--wait` is
+satisfied, and `--wait` cannot be satisfied while the services are unready for
+want of a schema. The hook breaks the ordering it exists to provide. So the
+application is gated by its **own readiness** instead: a service whose schema is
+missing fails `/readyz`, stays out of its Service's endpoints, and becomes ready
+when the migration lands. `helm install --wait` waits for the Deployments to become
+available, and a service whose schema is missing never does, so a migration
+that never succeeds is a failed install rather than a running environment that
+answers 500.
+
+(`--wait` alone does not wait for Jobs — that is `--wait-for-jobs`, and it
+cannot be used here: the self-destruct Job deliberately does not complete until
+it deletes the namespace, so waiting for it would hang every install.) The alternative — an initContainer polling
+the Job through the API — would put a service account token into the application
+pods, which this chart goes out of its way not to do.
+
 **The interface became async first, in its own change** ([#103](https://github.com/AKogut/ephemeral-k8s-test-envs/pull/103)).
 `better-sqlite3` is synchronous and the store interface was too. That shape is
 what decides whether a networked backend is a swap or a rewrite of every call

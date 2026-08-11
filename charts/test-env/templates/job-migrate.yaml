@@ -1,0 +1,82 @@
+{{- if eq .Values.database.backend "postgres" }}
+{{/*
+The schema, applied once per release, before anything serves.
+
+**Not a Helm hook, and that is the decision worth reading.** A
+`pre-install` hook runs before the chart's own objects exist, so it would look
+for a Postgres this release has not created yet. A `post-install` hook runs
+after `--wait` is satisfied, and `--wait` cannot be satisfied while the
+services are unready for want of a schema. Either way the ordering the hook is
+supposed to provide is the ordering it breaks.
+
+So these are ordinary Jobs, and the application is gated on them by its own
+readiness rather than by Helm: a service whose schema is missing fails
+`/readyz`, stays out of its Service's endpoints, and becomes ready the moment
+the migration lands. `helm install --wait` waits for the Deployments to become
+available, and a service whose schema is missing never does, so a migration
+that never succeeds is a failed install rather than a running environment that
+answers 500.
+
+(`--wait` alone does not wait for Jobs — that is `--wait-for-jobs`, and it
+cannot be used here: the self-destruct Job deliberately does not complete until
+it deletes the namespace, so waiting for it would hang every install.)
+
+The alternative — an initContainer polling the Job through the API — would put
+a service account token into the application pods, which this chart goes out of
+its way not to do (SECURITY.md). Readiness needs no credential.
+
+`backoffLimit` is what handles a database that is not accepting connections
+yet. The Job is safe to retry by construction: the advisory lock serialises
+concurrent runs and the ledger makes a repeat run a no-op.
+*/}}
+{{- range $database := list "auth" "notes" }}
+{{- $ctx := $ }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "test-env.migrateJobName" (dict "context" $ctx "database" $database) }}
+  labels:
+    {{- include "test-env.componentLabels" (dict "context" $ctx "component" $ctx.Values.database.migrations.component) | nindent 4 }}
+    app.kubernetes.io/part-of-database: {{ $database }}
+spec:
+  backoffLimit: {{ $ctx.Values.database.migrations.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "test-env.componentLabels" (dict "context" $ctx "component" $ctx.Values.database.migrations.component) | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ include "test-env.serviceAccountName" $ctx }}
+      automountServiceAccountToken: false
+      {{- with $ctx.Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml $ctx.Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: migrate
+          # The service's own image, so the migrations that run are the ones
+          # that shipped with the code using them.
+          image: {{ include "test-env.image" (dict "context" $ctx "component" (printf "%s-service" $database)) }}
+          imagePullPolicy: {{ $ctx.Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml $ctx.Values.containerSecurityContext | nindent 12 }}
+          command: ["node", "dist/migrate.js"]
+          env:
+            {{- include "test-env.commonEnv" $ctx | nindent 12 }}
+            - name: SERVICE_NAME
+              value: {{ printf "%s-service" $database }}
+            {{- include "test-env.databaseEnv" (dict "context" $ctx "database" $database) | nindent 12 }}
+          resources:
+            {{- toYaml $ctx.Values.database.migrations.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 32Mi
+{{- end }}
+{{- end }}

@@ -1,0 +1,151 @@
+{{- if and (eq .Values.database.backend "postgres") .Values.database.postgres.deploy }}
+{{/*
+The database, when the environment is asked to bring its own.
+
+A StatefulSet rather than a Deployment, and the difference is not decoration:
+the volume comes from a claim template tied to the pod's identity, so a
+restarted pod gets *its* data back rather than an empty disk or, worse, a
+second pod's. That is the whole reason the object exists, and it is the piece
+this project never exercised while every database lived inside its pod.
+
+The claim is deleted with the namespace like everything else here. It is not
+for surviving the environment — nothing in an environment is — it is for
+surviving a pod restart, which an emptyDir would not.
+
+One replica. Replication, failover and a pooler are a real subject and not
+this one; what an ephemeral environment needs from Postgres is that it be
+there, be waited for correctly, and go away cleanly.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "test-env.postgresName" . }}
+  labels:
+    {{- include "test-env.componentLabels" (dict "context" . "component" "postgres") | nindent 4 }}
+spec:
+  # Headless: there is one pod and nothing to balance, and a stable name that
+  # resolves straight to it is what the StatefulSet identity is for.
+  clusterIP: None
+  ports:
+    - name: postgres
+      port: {{ .Values.database.postgres.port }}
+      targetPort: postgres
+  selector:
+    {{- include "test-env.componentSelectorLabels" (dict "context" . "component" "postgres") | nindent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "test-env.postgresName" . }}-init
+  labels:
+    {{- include "test-env.componentLabels" (dict "context" . "component" "postgres") | nindent 4 }}
+data:
+  # The same file docker-compose mounts, so the two paths cannot drift.
+  10-databases.sql: |
+{{ .Files.Get "files/postgres-init.sql" | indent 4 }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "test-env.postgresName" . }}
+  labels:
+    {{- include "test-env.componentLabels" (dict "context" . "component" "postgres") | nindent 4 }}
+spec:
+  serviceName: {{ include "test-env.postgresName" . }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "test-env.componentSelectorLabels" (dict "context" . "component" "postgres") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "test-env.componentLabels" (dict "context" . "component" "postgres") | nindent 8 }}
+      annotations:
+        # Rolls the pod when the password changes, so it never keeps serving
+        # with credentials the clients have stopped using.
+        checksum/postgres-secret: {{ include (print $.Template.BasePath "/secret-postgres.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "test-env.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: postgres
+          image: "{{ .Values.database.postgres.image.repository }}:{{ .Values.database.postgres.image.tag }}"
+          imagePullPolicy: {{ .Values.database.postgres.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: postgres
+              containerPort: {{ .Values.database.postgres.port }}
+          env:
+            - name: POSTGRES_USER
+              value: {{ .Values.database.postgres.user | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "test-env.postgresSecretName" . }}
+                  key: password
+            # The maintenance database. Each service gets its own, created by
+            # the init script — see the comment in it for why that matters.
+            - name: POSTGRES_DB
+              value: postgres
+            # The image refuses to initialise into a non-empty directory, and
+            # a mounted volume is never empty — it has lost+found.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              # `-U` matters: without it pg_isready asks as root, which is not
+              # a role here, and reports the server up before it can serve
+              # anyone. A readiness probe that lies is worse than none — the
+              # migration Job would start against a database that refuses it.
+              command:
+                ["pg_isready", "-U", {{ .Values.database.postgres.user | quote }}, "-d", "postgres"]
+            initialDelaySeconds: 3
+            periodSeconds: 3
+            timeoutSeconds: 3
+            failureThreshold: 20
+          livenessProbe:
+            exec:
+              command:
+                ["pg_isready", "-U", {{ .Values.database.postgres.user | quote }}, "-d", "postgres"]
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.database.postgres.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+            # The image writes its socket and a lock file here, and the root
+            # filesystem is read-only like every other workload in this chart.
+            - name: run
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: init
+          configMap:
+            name: {{ include "test-env.postgresName" . }}-init
+        - name: run
+          emptyDir:
+            sizeLimit: 16Mi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "test-env.componentLabels" (dict "context" . "component" "postgres") | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.database.postgres.storage }}
+{{- end }}

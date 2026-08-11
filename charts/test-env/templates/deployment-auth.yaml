@@ -54,8 +54,7 @@ spec:
               value: auth-service
             - name: PORT
               value: {{ .Values.auth.port | quote }}
-            - name: DATABASE_PATH
-              value: /data/auth.sqlite
+            {{- include "test-env.databaseEnv" (dict "context" . "database" "auth") | nindent 12 }}
             - name: JWT_TTL_SECONDS
               value: {{ .Values.jwt.ttlSeconds | quote }}
             - name: SCRYPT_COST_LOG2

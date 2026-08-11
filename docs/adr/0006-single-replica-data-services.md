@@ -72,6 +72,11 @@ The chart is structured so this is a swap rather than a rewrite:
 3. Raise `replicaCount`; the services are otherwise already stateless.
 4. Add migrations as a `helm.sh/hook: pre-install,pre-upgrade` Job.
 
+Three of those four are what shipped. The fourth was wrong, and finding out why
+is the useful part: a `pre-install` hook runs before the chart's own objects
+exist, so it looks for a database this release has not created yet. See
+[ADR 0008](0008-networked-database-mode.md).
+
 Deliberately out of scope **for the default**. That list is no longer
 hypothetical — it is what [ADR 0008](0008-networked-database-mode.md) implements,
 behind `DB_BACKEND=postgres`, with SQLite still the default for exactly the

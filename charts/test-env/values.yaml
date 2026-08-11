@@ -121,6 +121,60 @@ gateway:
 
 # --------------------------------------------------------------------- tests --
 
+# -- Where the two data services keep their data.
+#
+# `sqlite` is the default and the reason an environment stands up in three
+# minutes with nothing to wait for (ADR 0006). `postgres` puts the database a
+# network away, which is what makes a second replica of a data service
+# possible and a migration necessary — see ADR 0008.
+database:
+  backend: sqlite
+
+  postgres:
+    # -- Deploy a StatefulSet, or point at a server that already exists.
+    deploy: true
+    image:
+      repository: postgres
+      # Pinned: a database that changes under the suite would make an upstream
+      # release and a real regression look identical.
+      tag: 17.6-alpine
+      # Its own policy, not image.pullPolicy. That one is about this project's
+      # five images, which CI side-loads into the cluster and therefore sets to
+      # Never; an upstream image has to be pulled, and inheriting Never gives
+      # ErrImageNeverPull on a pod nobody thought to load.
+      pullPolicy: IfNotPresent
+    # -- Left empty while `deploy`, the chart points the services at the
+    # Service it creates. Set it to use an existing server instead.
+    host: ""
+    port: 5432
+    user: app
+    # -- A Secret holding `password`. Generated per release when empty and
+    # preserved across upgrades, the same way the JWT signing key is.
+    existingSecret: ""
+    # -- The volume the StatefulSet claims. Deleted with the namespace, like
+    # everything else here; it exists so the database survives a pod restart,
+    # not the environment.
+    storage: 1Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 1000m
+        memory: 512Mi
+
+  # -- The Jobs that apply each service's schema before it serves.
+  migrations:
+    component: db-migrate
+    backoffLimit: 6
+    resources:
+      requests:
+        cpu: 50m
+        memory: 96Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+
 tests:
   # -- Set to false to stand up the environment without running anything, which
   # is what `local-demo.sh --no-tests` does before handing over a port-forward.

@@ -176,6 +176,71 @@ Environment variables every service shares.
       fieldPath: metadata.namespace
 {{- end -}}
 
+{{- define "test-env.postgresName" -}}
+{{- printf "%s-postgres" (include "test-env.fullname" .) -}}
+{{- end -}}
+
+{{- define "test-env.postgresSecretName" -}}
+{{- .Values.database.postgres.existingSecret | default (printf "%s-postgres" (include "test-env.fullname" .)) -}}
+{{- end -}}
+
+{{/*
+Where the services look for Postgres.
+
+An explicit host wins, so an environment can be pointed at a database that
+already exists. With `deploy` and nothing explicit, it is the headless Service
+this chart creates.
+*/}}
+{{- define "test-env.postgresHost" -}}
+{{- if .Values.database.postgres.host -}}
+{{- .Values.database.postgres.host -}}
+{{- else -}}
+{{- include "test-env.postgresName" . -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The database environment for one service. Takes "context" and "database".
+
+The URL is assembled in the pod from parts rather than stored whole, because a
+Secret holding `postgres://user:password@host/db` puts the password into
+anything that prints the connection string — a log line, an error, `kubectl
+describe` of the wrong object. Kubernetes expands $(VAR) against earlier
+entries in the same container's env, so only the password comes from the
+Secret.
+
+The generated password is alphanumeric for the same reason it has to be: a `@`
+or a `/` in it would end the URL somewhere other than where it means to.
+*/}}
+{{- define "test-env.databaseEnv" -}}
+{{- $ctx := .context -}}
+{{- $database := .database -}}
+- name: DB_BACKEND
+  value: {{ $ctx.Values.database.backend | quote }}
+{{- if eq $ctx.Values.database.backend "postgres" }}
+- name: DB_HOST
+  value: {{ include "test-env.postgresHost" $ctx | quote }}
+- name: DB_PORT
+  value: {{ $ctx.Values.database.postgres.port | quote }}
+- name: DB_USER
+  value: {{ $ctx.Values.database.postgres.user | quote }}
+- name: DB_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "test-env.postgresSecretName" $ctx }}
+      key: password
+- name: DATABASE_URL
+  value: "postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/{{ $database }}"
+{{- else }}
+- name: DATABASE_PATH
+  value: /data/{{ $database }}.sqlite
+{{- end }}
+{{- end -}}
+
+{{- define "test-env.migrateJobName" -}}
+{{- printf "%s-migrate-%s" (include "test-env.fullname" .context) .database -}}
+{{- end -}}
+
 {{- define "test-env.minioServiceName" -}}
 {{- printf "%s-minio" (include "test-env.fullname" .) -}}
 {{- end -}}
@@ -286,6 +351,17 @@ Returns JSON; call sites do `include ... | fromJson`.
 {{- if .Values.teardown.selfDestruct.enabled -}}
 {{- $workloads = append $workloads (dict "count" 1 "res" .Values.teardown.selfDestruct.resources) -}}
 {{- end -}}
+{{- if eq .Values.database.backend "postgres" -}}
+{{- if .Values.database.postgres.deploy -}}
+{{- $workloads = append $workloads (dict "count" 1 "res" .Values.database.postgres.resources) -}}
+{{- end -}}
+{{/*
+Both migration Jobs, counted even though they finish. A quota sized for the
+steady state rejects the pods that get an environment to it, and reports that
+as a Pending pod rather than as a number that was too small.
+*/}}
+{{- $workloads = append $workloads (dict "count" 2 "res" .Values.database.migrations.resources) -}}
+{{- end -}}
 
 {{- range $w := $workloads -}}
 {{- $n := $w.count -}}
@@ -324,6 +400,12 @@ Returns JSON; call sites do `include ... | fromJson`.
 {{- end -}}
 {{- if not (has .Values.notes.authMode (list "jwt-only" "verify-with-auth-service")) -}}
 {{- fail (printf "notes.authMode must be jwt-only or verify-with-auth-service, got %q" .Values.notes.authMode) -}}
+{{- end -}}
+{{- if not (has .Values.database.backend (list "sqlite" "postgres")) -}}
+{{- fail (printf "database.backend must be sqlite or postgres, got %q" .Values.database.backend) -}}
+{{- end -}}
+{{- if and (eq .Values.database.backend "postgres") (not .Values.database.postgres.deploy) (not .Values.database.postgres.host) -}}
+{{- fail "database.postgres.host is required when database.postgres.deploy=false: there would be nothing to connect to" -}}
 {{- end -}}
 {{- if and .Values.tests.spread.enabled (not (has .Values.tests.spread.whenUnsatisfiable (list "DoNotSchedule" "ScheduleAnyway"))) -}}
 {{- fail (printf "tests.spread.whenUnsatisfiable must be DoNotSchedule or ScheduleAnyway, got %q" .Values.tests.spread.whenUnsatisfiable) -}}
