@@ -75,6 +75,13 @@ spec:
   ingress:
     - from:
         - podSelector: {}
+{{- if .Values.gateway.ingress.enabled }}
+        # The ingress controller lives in its own namespace, so `podSelector`
+        # does not reach it and a default-deny policy would drop the traffic
+        # the Ingress exists to carry. Publishing an environment means
+        # accepting connections from outside it — that is what publishing is.
+        - namespaceSelector: {}
+{{- end }}
       ports:
         - protocol: TCP
           port: {{ .Values.gateway.port }}

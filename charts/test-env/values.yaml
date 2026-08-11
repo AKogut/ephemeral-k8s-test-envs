@@ -107,6 +107,29 @@ gateway:
   service:
     type: ClusterIP
     port: 80
+
+  # -- A hostname for the environment, so it can be opened rather than
+  # port-forwarded (#84).
+  #
+  # Off by default, and not only because kind has no DNS. A preview URL is a
+  # public deployment of unreviewed code: turning this on without deciding who
+  # may reach it puts every pull request, including the failing ones, on the
+  # internet. Decide that first — an OAuth proxy, an IP allow-list, or basic
+  # auth from a Secret — and put it in `annotations`.
+  ingress:
+    enabled: false
+    className: nginx
+    # -- The host is <namespace>.<domain>, so an environment in `pr-123` is
+    # reachable at pr-123.preview.example.com. Required when enabled; the chart
+    # refuses to render without it rather than producing an Ingress with a
+    # hostname of nothing.
+    domain: ""
+    annotations: {}
+    tls:
+      enabled: false
+      # -- A certificate that already exists. cert-manager would be the other
+      # answer, and it is a cluster-level concern rather than a chart one.
+      secretName: ""
     nodePort: ""
   resources:
     requests:
