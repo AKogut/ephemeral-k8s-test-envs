@@ -2,7 +2,7 @@ name: Ephemeral environment
 
 # The full lifecycle in one workflow:
 #
-#   verify (no cluster) -> build & push images -> kind cluster -> helm install
+#   verify (no cluster) -> build the images -> kind cluster -> helm install
 #   -> sharded run -> aggregate -> publish -> teardown -> prove teardown happened
 #
 # Every environment is named after what created it (pr-<number> or run-<id>), and
@@ -24,6 +24,10 @@ on:
         description: Skip teardown for debugging (the self-destruct Job still applies)
         type: boolean
         default: false
+      simulate_fork:
+        description: Take the fork path — build without pushing, carry the images as artifacts
+        type: boolean
+        default: false
 
 concurrency:
   # A new push to the same PR replaces the previous run and, with it, the
@@ -37,6 +41,21 @@ permissions:
 env:
   NODE_VERSION: "22"
   REGISTRY: ghcr.io
+  # A pull request from a fork gets a read-only GITHUB_TOKEN however generous
+  # the `permissions:` block is — deliberate on GitHub's part, and it cannot be
+  # overridden. So every step that writes outside the run is gated on this
+  # instead of attempted and left to 403: the registry push, the layer cache,
+  # the code-scanning upload and the summary comment.
+  #
+  # Nothing that *checks* anything is gated on it. A fork run builds the same
+  # five images, scans them under the same rules, creates the same cluster and
+  # runs the same suite. See docs/ci-pipeline.md#a-pull-request-from-a-fork.
+  #
+  # `simulate_fork` forces the false branch on a manual run. Without it the
+  # path that only forks take would never execute in this repository, and an
+  # untaken branch is how the NetworkPolicy managed to be wrong in three ways
+  # across several releases (#90).
+  CAN_WRITE: ${{ !inputs.simulate_fork && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
   # Pinned rather than :latest — a storage backend that changes under the tests
   # would turn a real regression and an upstream change into the same red build.
   MINIO_IMAGE: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
@@ -363,7 +382,10 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
 
+      # Code scanning is a write, so a fork cannot reach it. The gate below
+      # is not, and still runs — a fork's images are held to the same rule.
       - name: Publish it to code scanning
+        if: env.CAN_WRITE == 'true'
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-${{ matrix.component }}.sarif
@@ -464,7 +486,10 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
 
+      # Code scanning is a write, so a fork cannot reach it. The gate below
+      # is not, and still runs — a fork's images are held to the same rule.
       - name: Publish it to code scanning
+        if: env.CAN_WRITE == 'true'
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-api-tests.sarif
@@ -538,7 +563,10 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
 
+      # Code scanning is a write, so a fork cannot reach it. The gate below
+      # is not, and still runs — a fork's images are held to the same rule.
       - name: Publish it to code scanning
+        if: env.CAN_WRITE == 'true'
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-aggregator.sarif
@@ -671,13 +699,26 @@ jobs:
         run: docker compose down -v
 
   # ------------------------------------------------------------------ build --
+  # The five images the cluster jobs install, built once and delivered to them
+  # by whichever route this run is allowed to use.
+  #
+  # A fork cannot push to the registry, and skipping the job on a fork would be
+  # worse than the failure it avoids: the cluster job lists this one in
+  # `needs:`, a skipped dependency skips it too, and a skipped required check
+  # counts as a passing one. The pull request that deserves the most scrutiny
+  # would be the one that got none. So the registry is treated as a delivery
+  # mechanism rather than a requirement — a fork exports the same image as a
+  # tarball and carries it between jobs as an artifact instead.
   build:
-    name: Push ${{ matrix.component }} to GHCR
+    name: Package ${{ matrix.component }}
     runs-on: ubuntu-latest
     # Only after everything that can be checked without a cluster has passed.
     needs: [chart, sharding, suite, scripts, code, images, runner, aggregator, stack]
     permissions:
       contents: read
+      # Silently downgraded to read on a fork pull request. Asked for anyway:
+      # it is what this job needs where it can have it, and CAN_WRITE decides
+      # whether it is used.
       packages: write
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
@@ -720,17 +761,28 @@ jobs:
       - uses: docker/setup-buildx-action@v4
 
       - uses: docker/login-action@v4
+        if: env.CAN_WRITE == 'true'
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      # One build, two destinations. The image is identical either way — same
+      # context, same build-args, same tag — and only where it is put differs,
+      # which is why this is one step with three computed inputs rather than
+      # two steps that must be kept in step with each other.
+      #
+      # `cache-to` goes with it: the Actions cache is a write too, and a fork
+      # writing to the base repository's cache is refused. `cache-from` still
+      # reads, so a fork build is no slower than a first build of the same
+      # code here.
+      - name: Build, and push it or keep it
         uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
-          push: true
+          push: ${{ env.CAN_WRITE == 'true' }}
+          outputs: ${{ env.CAN_WRITE == 'true' && '' || format('type=docker,dest=/tmp/{0}.tar', matrix.component) }}
           tags: ${{ env.REGISTRY }}/${{ steps.meta.outputs.namespace }}/${{ matrix.component }}:${{ steps.meta.outputs.tag }}
           build-args: |
             SERVICE_VERSION=${{ steps.meta.outputs.tag }}
@@ -738,8 +790,22 @@ jobs:
           # Scoped per component, so changing one service does not invalidate the
           # cache for the other four.
           cache-from: type=gha,scope=${{ matrix.component }}
-          cache-to: type=gha,scope=${{ matrix.component }},mode=max
+          cache-to: ${{ env.CAN_WRITE == 'true' && format('type=gha,scope={0},mode=max', matrix.component) || '' }}
           provenance: false
+
+      - name: Hand the image to the cluster jobs
+        if: env.CAN_WRITE != 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: image-${{ matrix.component }}
+          path: /tmp/${{ matrix.component }}.tar
+          # The only consumers are two jobs in this same run. Keeping five
+          # image tarballs for a fortnight after that would be storage spent
+          # on nothing.
+          retention-days: 1
+          # A missing tarball here becomes ErrImageNeverPull twenty minutes
+          # later in a job that reads as if the cluster were at fault.
+          if-no-files-found: error
 
   # ------------------------------------------------- the ephemeral environment --
   networkpolicy:
@@ -766,19 +832,14 @@ jobs:
           kubectl -n kube-system rollout status daemonset/calico-node --timeout=300s
           kubectl wait --for=condition=Ready node --all --timeout=180s
 
-      - uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Side-load the images
-        run: |
-          for component in auth-service notes-service gateway api-tests aggregator; do
-            ref="${REGISTRY}/${IMAGE_NAMESPACE}/${component}:${IMAGE_TAG}"
-            docker pull "$ref"
-            kind load docker-image --name netpol "$ref"
-          done
+        uses: ./.github/actions/load-images
+        with:
+          cluster: netpol
+          registry: ${{ env.REGISTRY }}
+          namespace: ${{ needs.build.outputs.namespace }}
+          tag: ${{ needs.build.outputs.tag }}
+          from-registry: ${{ env.CAN_WRITE }}
 
       - name: Install with the policy enforced
         run: |
@@ -882,23 +943,14 @@ jobs:
           config: scripts/kind-multi-node.yaml
           wait: 180s
 
-      - uses: docker/login-action@v4
+      - name: Put the images into the cluster
+        uses: ./.github/actions/load-images
         with:
+          cluster: ephemeral-test-envs
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pull images and side-load them into kind
-        run: |
-          # Pulling once on the host and side-loading beats letting four shard
-          # pods each pull the same image from GHCR inside the cluster.
-          for component in auth-service notes-service gateway api-tests aggregator; do
-            ref="${REGISTRY}/${IMAGE_NAMESPACE}/${component}:${IMAGE_TAG}"
-            echo "::group::$component"
-            docker pull -q "$ref"
-            kind load docker-image --name ephemeral-test-envs "$ref"
-            echo "::endgroup::"
-          done
+          namespace: ${{ needs.build.outputs.namespace }}
+          tag: ${{ needs.build.outputs.tag }}
+          from-registry: ${{ env.CAN_WRITE }}
 
       - name: Deploy the environment
         run: |
@@ -1106,8 +1158,11 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      # Writing a comment needs a write token, which a fork pull request does
+      # not get. The same report is in the job summary above either way — the
+      # comment is a convenience, not the delivery.
       - name: Comment the summary on the pull request
-        if: always() && github.event_name == 'pull_request'
+        if: always() && github.event_name == 'pull_request' && env.CAN_WRITE == 'true'
         uses: actions/github-script@v9
         with:
           script: |

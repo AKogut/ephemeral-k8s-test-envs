@@ -1,0 +1,110 @@
+name: Load the environment images into kind
+description: >
+  Puts the five images into a kind cluster from wherever this run was able to
+  leave them — the registry, or a tarball carried between jobs as an artifact.
+
+# Two jobs create a cluster and both need the same five images in it, by the
+# same reference. The reference is a GHCR one either way, because the chart is
+# installed with `image.pullPolicy: Never` and a name the kubelet must find in
+# the node's image store; where the bytes came from is this action's business
+# and nothing else's.
+#
+# The fork case is the reason the second path exists. A pull request from a
+# fork gets a read-only GITHUB_TOKEN whatever the workflow's `permissions:`
+# block asks for, so the build job cannot push. It exports a docker archive
+# instead, which carries the same single tag, and `kind load image-archive`
+# puts it in the node under that name.
+
+inputs:
+  cluster:
+    description: The kind cluster name to load into
+    required: true
+  registry:
+    description: Registry host the images are named after
+    required: true
+  namespace:
+    description: Lowercased owner/repo the images live under
+    required: true
+  tag:
+    description: Image tag — the commit SHA
+    required: true
+  from-registry:
+    description: >
+      'true' when this run could push to the registry, so the images are there
+      to be pulled. Anything else loads the tarballs the build job uploaded.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Log in to the registry
+      if: inputs.from-registry == 'true'
+      uses: docker/login-action@v4
+      with:
+        registry: ${{ inputs.registry }}
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+
+    - name: Collect the image tarballs
+      if: inputs.from-registry != 'true'
+      uses: actions/download-artifact@v8
+      with:
+        pattern: image-*
+        merge-multiple: true
+        path: /tmp/images
+
+    - name: Load them into the cluster
+      shell: bash
+      env:
+        CLUSTER: ${{ inputs.cluster }}
+        REGISTRY: ${{ inputs.registry }}
+        IMAGE_NAMESPACE: ${{ inputs.namespace }}
+        IMAGE_TAG: ${{ inputs.tag }}
+        FROM_REGISTRY: ${{ inputs.from-registry }}
+      run: |
+        set -euo pipefail
+        for component in auth-service notes-service gateway api-tests aggregator; do
+          ref="${REGISTRY}/${IMAGE_NAMESPACE}/${component}:${IMAGE_TAG}"
+          echo "::group::$component"
+          if [ "$FROM_REGISTRY" = 'true' ]; then
+            # Pulling once on the host and side-loading beats letting four
+            # shard pods each pull the same image from GHCR inside the cluster.
+            docker pull -q "$ref"
+            kind load docker-image --name "$CLUSTER" "$ref"
+          else
+            kind load image-archive --name "$CLUSTER" "/tmp/images/${component}.tar"
+          fi
+          echo "::endgroup::"
+        done
+
+    - name: Every image is where the kubelet will look for it
+      shell: bash
+      env:
+        CLUSTER: ${{ inputs.cluster }}
+        REGISTRY: ${{ inputs.registry }}
+        IMAGE_NAMESPACE: ${{ inputs.namespace }}
+        IMAGE_TAG: ${{ inputs.tag }}
+      run: |
+        set -euo pipefail
+        # `pullPolicy: Never` turns a missing or differently-named image into
+        # ErrImageNeverPull on a pod several minutes later, which reads like a
+        # scheduling problem rather than a loading one. Asked here instead,
+        # against each node's own image store, while the answer is still cheap.
+        #
+        # Every node, not just the control plane: a shard pod can be scheduled
+        # onto any of them, and an image that reached one node is a failure
+        # that only appears for some placements.
+        missing=0
+        for node in $(kind get nodes --name "$CLUSTER"); do
+          present=$(docker exec "$node" crictl images -o json)
+          for component in auth-service notes-service gateway api-tests aggregator; do
+            ref="${REGISTRY}/${IMAGE_NAMESPACE}/${component}:${IMAGE_TAG}"
+            if printf '%s' "$present" | grep -qF "$ref"; then
+              echo "$node: $ref"
+            else
+              echo "::error::$ref is not in the image store of $node"
+              missing=$((missing + 1))
+            fi
+          done
+        done
+        [ "$missing" = "0" ]
