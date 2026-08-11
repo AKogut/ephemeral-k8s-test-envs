@@ -25,6 +25,14 @@ No shared staging environment to queue for. No "it passed on staging" where stag
 was in an unknown state. No leftover namespaces quietly costing money after the PR
 is merged.
 
+> **This is a reference implementation, not a package.** There is nothing to
+> `helm repo add` and no workflow to call: adopting the pattern means reading
+> this repository and building it into yours. That is deliberate — every
+> decision is written down next to the thing it affects, and nothing is hidden
+> behind an abstraction whose source lives somewhere else.
+> [ADR 0009](docs/adr/0009-reference-implementation-not-a-platform.md) argues it,
+> including what it costs.
+
 ## Quick start
 
 ```bash

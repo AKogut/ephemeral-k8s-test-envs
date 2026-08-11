@@ -265,5 +265,8 @@ failure locally is one command, not a re-derivation of what the workflow does.
 - **Deployment to a persistent cluster.** Out of scope — see the cloud table in
   [architecture.md](architecture.md#what-a-cloud-deployment-would-change).
 - **A matrix over Kubernetes versions.** Valuable for a chart meant for public
-  consumption; noise here.
+  consumption; noise here — and this chart is deliberately not meant for it, see
+  [ADR 0009](adr/0009-reference-implementation-not-a-platform.md).
+- **A `workflow_call` interface.** Same decision: the pipeline is meant to be
+  read and reimplemented, not called.
 - **Nightly runs.** Nothing to catch: there is no long-lived environment to drift.
