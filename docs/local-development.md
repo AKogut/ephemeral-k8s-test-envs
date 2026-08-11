@@ -98,6 +98,31 @@ tears everything down, and verifies the teardown.
 ./scripts/local-demo.sh --cleanup-only  # clean up a previous --keep
 ```
 
+### An environment with a real database
+
+```bash
+helm install demo ./charts/test-env --namespace demo --create-namespace \
+  --set database.backend=postgres \
+  --set auth.replicaCount=2 --set notes.replicaCount=2 \
+  --wait
+```
+
+`database.backend=postgres` adds a `StatefulSet`, a Secret holding a generated
+password, an init script that gives each service its own database, and one
+migration Job per service. The two data services can then run more than one
+replica, which SQLite in the pod makes impossible — see
+[ADR 0008](adr/0008-networked-database-mode.md).
+
+Nothing is gated on a Helm hook. The migration Jobs are ordinary resources and
+the services gate themselves on readiness: without a schema `/readyz` fails, the
+pod stays out of its Service, and it joins when the migration lands. `--wait`
+waits for the Deployments, and one that never becomes available fails the
+install — which is what a migration that never succeeds produces.
+
+Note `--wait` alone does **not** wait for Jobs; that is `--wait-for-jobs`, and
+this chart cannot use it, because the self-destruct Job is designed not to
+complete until it deletes the namespace.
+
 With `--keep`, reach the environment from your machine:
 
 ```bash

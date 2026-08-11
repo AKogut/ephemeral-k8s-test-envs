@@ -24,6 +24,8 @@ complete is useless if the sender's egress is denied.
 {{- $tests := include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.tests.component) -}}
 {{- $aggregator := include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.aggregator.component) -}}
 {{- $minio := include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.minio.component) -}}
+{{- $postgres := include "test-env.componentSelectorLabels" (dict "context" . "component" "postgres") -}}
+{{- $migrate := include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.database.migrations.component) -}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -104,6 +106,17 @@ spec:
       {{- $auth | nindent 6 }}
   policyTypes:
     - Ingress
+{{- if eq .Values.database.backend "postgres" }}
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- $postgres | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.database.postgres.port }}
+{{- end }}
   ingress:
     - from:
         - podSelector:
@@ -151,6 +164,73 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.auth.port }}
+{{- if eq .Values.database.backend "postgres" }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- $postgres | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.database.postgres.port }}
+{{- end }}
+{{- if eq .Values.database.backend "postgres" }}
+---
+{{/*
+The database, and the Jobs that migrate it.
+
+Ingress only from the two services that own a schema in it and from the
+migration Jobs. Nothing else in the namespace has any business here — a shard
+pod reaching the database directly would be a test that passes without going
+through the application.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "test-env.fullname" . }}-postgres
+  labels:
+    {{- include "test-env.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- $postgres | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- $auth | nindent 14 }}
+        - podSelector:
+            matchLabels:
+              {{- $notes | nindent 14 }}
+        - podSelector:
+            matchLabels:
+              {{- $migrate | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.database.postgres.port }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "test-env.fullname" . }}-migrate
+  labels:
+    {{- include "test-env.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- $migrate | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- $postgres | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.database.postgres.port }}
+{{- end }}
 {{- if .Values.tests.enabled }}
 ---
 {{/*
