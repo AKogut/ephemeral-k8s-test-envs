@@ -37,6 +37,9 @@ permissions:
 env:
   NODE_VERSION: "22"
   REGISTRY: ghcr.io
+  # Pinned rather than :latest — a storage backend that changes under the tests
+  # would turn a real regression and an upstream change into the same red build.
+  MINIO_IMAGE: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
 
 jobs:
   chart:
@@ -100,7 +103,37 @@ jobs:
       - name: Typecheck
         run: npm --prefix scripts run typecheck
 
+      - name: Start MinIO for the live storage tests
+        run: |
+          # Started here rather than as a `services:` container because MinIO
+          # needs a command argument (`server /data`) and service containers
+          # cannot override one.
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=testkey \
+            -e MINIO_ROOT_PASSWORD=testsecret123 \
+            "$MINIO_IMAGE" server /data
+
+          for _ in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:9000/minio/health/live >/dev/null; then
+              echo "MinIO is live"; exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::MinIO did not become healthy"
+          docker logs minio
+          exit 1
+
       - name: Unit tests with coverage
+        env:
+          # The signature layer is checked against AWS's published vectors, but
+          # only a real server catches what a stub cannot: a header it insists
+          # on, a listing that pages differently, an encoding it rejects. The
+          # suite refuses to skip these when CI is set, so a missing MinIO is a
+          # red build rather than silence.
+          RESULTS_S3_ENDPOINT: http://127.0.0.1:9000
+          RESULTS_S3_BUCKET: results
+          RESULTS_S3_ACCESS_KEY_ID: testkey
+          RESULTS_S3_SECRET_ACCESS_KEY: testsecret123
         run: |
           # `tee` would swallow a failing exit status without this.
           set -o pipefail
