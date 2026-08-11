@@ -325,6 +325,12 @@ Returns JSON; call sites do `include ... | fromJson`.
 {{- if not (has .Values.notes.authMode (list "jwt-only" "verify-with-auth-service")) -}}
 {{- fail (printf "notes.authMode must be jwt-only or verify-with-auth-service, got %q" .Values.notes.authMode) -}}
 {{- end -}}
+{{- if and .Values.tests.spread.enabled (not (has .Values.tests.spread.whenUnsatisfiable (list "DoNotSchedule" "ScheduleAnyway"))) -}}
+{{- fail (printf "tests.spread.whenUnsatisfiable must be DoNotSchedule or ScheduleAnyway, got %q" .Values.tests.spread.whenUnsatisfiable) -}}
+{{- end -}}
+{{- if and .Values.tests.spread.enabled (lt (int .Values.tests.spread.maxSkew) 1) -}}
+{{- fail (printf "tests.spread.maxSkew must be at least 1, got %v" .Values.tests.spread.maxSkew) -}}
+{{- end -}}
 {{- if and .Values.aggregator.enabled (not .Values.tests.enabled) -}}
 {{- fail "aggregator.enabled requires tests.enabled: there would be no shard results to merge" -}}
 {{- end -}}

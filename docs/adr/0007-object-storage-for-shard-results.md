@@ -76,8 +76,9 @@ which is how paths rot unnoticed.
 - Shard pods are scheduled on any node. Measured on the same cluster as above:
   both workers used, with shards reading and writing storage that lives on the
   other node.
-- CI asserts it. The environment job runs on two workers and fails if every
-  shard lands on one node — false before this change, true after.
+- CI asserts it. The environment job runs on two workers and fails if the shards
+  did not cover every node available to them — false before this change, true
+  after.
 - No PersistentVolume, no `ReadWriteMany` storage class to arrange on a cloud
   cluster, and no results-exporter pod. `fetch-results.sh` lost 41 lines.
 - Results can outlive the cluster when an external bucket is used, which is what
@@ -97,6 +98,12 @@ which is how paths rot unnoticed.
 - SigV4 is now this repository's code to maintain. It is covered against AWS's
   own published vectors and against a live MinIO on every CI run, which is the
   price of not taking the SDK.
+- Removing the constraint did not create the distribution, and for a while this
+  ADR read as though it had. The scheduler's default spreading tolerates a skew
+  of 3, so a later run put both shards of a two-shard suite on one of two
+  healthy workers — green, correct, and half the environment it claimed to be.
+  The shard Job now carries `topologySpreadConstraints` of its own; this
+  decision is what made that possible, not what delivered it.
 
 ## Alternatives considered
 

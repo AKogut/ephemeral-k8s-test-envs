@@ -117,12 +117,18 @@ jobs:
           fi
           echo "confirmed: no PersistentVolumeClaim, no claim reference"
 
+          # And the other half of the same property, checked by the script
+          # below: nothing ties a shard to a node any more, but nothing spread
+          # them either until the Job said so.
+          python3 scripts/assert-shard-spread.py /tmp/rendered.yaml
+
       - name: Reject invalid values
         run: |
           # Testing that a chart renders is easy. Testing that it *refuses* to
           # render nonsense is what catches a guard that quietly stopped guarding.
           for bad in "tests.shards=0" "tests.shards=999" "notes.authMode=nope" "notes.authMode=" \
-                     "minio.enabled=false" "tests.results.s3.bucket="; do
+                     "minio.enabled=false" "tests.results.s3.bucket=" \
+                     "tests.spread.whenUnsatisfiable=Sometimes" "tests.spread.maxSkew=0"; do
             if helm template ci charts/test-env --set "$bad" >/dev/null 2>&1; then
               echo "::error::chart accepted invalid value: $bad"
               exit 1
@@ -973,6 +979,13 @@ jobs:
           # to. The run stays green and the parallelism quietly collapses onto
           # a single machine, which is worse than a failure because nothing
           # says so.
+          #
+          # The threshold used to be "more than one node", which is as much as
+          # could be claimed while the spread was the scheduler's choice rather
+          # than the chart's. A dispatch at tests.shards=2 put both shards on
+          # one of two healthy workers and failed it — the assertion was
+          # testing luck. With topologySpreadConstraints the distribution is
+          # bounded, so the expected figure is exact.
           ns="${{ steps.env.outputs.namespace }}"
           job="${{ steps.env.outputs.release }}-test-env-shards-r1"
 
@@ -983,22 +996,27 @@ jobs:
             -o jsonpath='{range .items[*]}{.spec.nodeName}{"\n"}{end}' \
             | sort -u | grep -c . || true)
 
-          # kubectl's jsonpath has no negation, so schedulable capacity is
-          # total nodes minus the ones carrying a NoSchedule taint — which on
-          # kind is the control plane.
-          total=$(kubectl get nodes --no-headers | grep -c . || true)
-          tainted=$(kubectl get nodes \
-            -o jsonpath='{range .items[*]}{.spec.taints[*].effect}{"\n"}{end}' \
-            | grep -c NoSchedule || true)
-          schedulable=$((total - tainted))
+          # A node counts as capacity only if it is Ready and carries no
+          # NoSchedule taint — which is also exactly what nodeTaintsPolicy:
+          # Honor makes the scheduler count as a domain. kubectl's jsonpath
+          # has no negation, so the filtering happens in awk.
+          schedulable=$(kubectl get nodes \
+            -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{" "}{.spec.taints[*].effect}{"\n"}{end}' \
+            | awk '$1 == "True" && $0 !~ /NoSchedule/ { n++ } END { print n + 0 }')
+
+          # maxSkew 1 across `schedulable` domains means the shards cover
+          # every domain until there are fewer shards than domains.
+          expected=$(( SHARDS < schedulable ? SHARDS : schedulable ))
 
           kubectl -n "$ns" get pods -l "batch.kubernetes.io/job-name=$job" \
             -o custom-columns='POD:.metadata.name,NODE:.spec.nodeName' --no-headers
 
-          echo "shard pods ran on $nodes node(s); $schedulable are schedulable"
+          echo "$SHARDS shard pod(s) ran on $nodes node(s); $schedulable schedulable, $expected expected"
 
-          if [ "$schedulable" -gt 1 ] && [ "$nodes" -lt 2 ]; then
-            echo "::error::every shard landed on one node — storage is dictating placement again"
+          if [ "$nodes" -lt "$expected" ]; then
+            echo "::error::the shards covered $nodes node(s) where $expected were available to them"
+            kubectl -n "$ns" get job "$job" \
+              -o jsonpath='{.spec.template.spec.topologySpreadConstraints}{"\n"}'
             exit 1
           fi
           printf '| Shard spread | %s of %s schedulable nodes |\n' "$nodes" "$schedulable" >> "$GITHUB_STEP_SUMMARY"

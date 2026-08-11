@@ -108,6 +108,35 @@ spec:
         - name: tmp
           emptyDir:
             sizeLimit: 128Mi
+      {{- if .Values.tests.spread.enabled }}
+      {{/*
+      Freeing the shards from a shared volume (ADR 0007) made spreading them
+      across nodes *possible*. Nothing made it happen: the scheduler scores
+      nodes and its default spreading tolerates a skew of 3, so two shards on
+      one worker of two is a perfectly ordinary choice for it — observed, at
+      tests.shards=2, on a cluster with both workers Ready and in use.
+
+      That is the same failure the volume caused, arriving by a different
+      route: the run is green, the report is right, and the parallelism the
+      environment exists for has quietly halved. So it is a constraint now
+      rather than a hope, and the CI assertion that shards spread has
+      something to assert against.
+
+      nodeTaintsPolicy: Honor keeps a node the pod could never run on — a
+      control plane, a drained node — out of the domain count. Left at the
+      default of Ignore, an empty untouchable domain makes every real
+      placement look skewed and, with DoNotSchedule, pins the Job Pending.
+      */}}
+      topologySpreadConstraints:
+        - maxSkew: {{ .Values.tests.spread.maxSkew }}
+          topologyKey: {{ .Values.tests.spread.topologyKey }}
+          whenUnsatisfiable: {{ .Values.tests.spread.whenUnsatisfiable }}
+          nodeTaintsPolicy: Honor
+          nodeAffinityPolicy: Honor
+          labelSelector:
+            matchLabels:
+              {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.tests.component) | nindent 14 }}
+      {{- end }}
       {{- with .Values.tests.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
