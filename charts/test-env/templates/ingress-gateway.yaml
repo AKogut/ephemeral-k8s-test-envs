@@ -1,0 +1,59 @@
+{{- if .Values.gateway.ingress.enabled }}
+{{/*
+The environment's address.
+
+An ephemeral environment has two audiences. The pipeline is one: it deploys,
+tests, tears down and never needs a URL. The other is people — a reviewer who
+wants to see the change behave, and for whom `kubectl port-forward` means
+cluster access, the right context and the release name.
+
+The host is derived from the namespace, so it carries the same name as
+everything else this environment owns: `pr-123.preview.example.com`. It is
+therefore as ephemeral as the namespace — the Ingress is an ordinary namespaced
+object and goes when the namespace does, which is what keeps a preview URL from
+outliving the thing it points at. verify-teardown.sh would find it otherwise.
+
+Off by default, and the reason is not kind's lack of DNS. A preview URL is a
+public deployment of unreviewed code: every pull request, including the ones
+that fail, reachable by anyone who guesses a number. Who may reach it is a
+decision to make before turning this on, and it belongs in `annotations` —
+an OAuth proxy, an IP allow-list, basic auth from a Secret. The chart does not
+pick one, because the answer depends on a cluster this chart cannot see.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "test-env.gatewayServiceName" . }}
+  labels:
+    {{- include "test-env.componentLabels" (dict "context" . "component" .Values.gateway.component) | nindent 4 }}
+  {{- with .Values.gateway.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.gateway.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if .Values.gateway.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ include "test-env.previewHost" . | quote }}
+      {{- with .Values.gateway.ingress.tls.secretName }}
+      secretName: {{ . }}
+      {{- end }}
+  {{- end }}
+  rules:
+    - host: {{ include "test-env.previewHost" . | quote }}
+      http:
+        paths:
+          # Everything, because the gateway is already the thing that decides
+          # what goes where. A second routing table here would be a second
+          # place to get it wrong.
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "test-env.gatewayServiceName" . }}
+                port:
+                  number: {{ .Values.gateway.service.port }}
+{{- end }}

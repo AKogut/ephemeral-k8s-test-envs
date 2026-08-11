@@ -15,6 +15,11 @@
     kubectl -n {{ .Release.Namespace }} wait --for=condition=available --timeout=5m deployment --all
 
   Reach it from your machine:
+{{- if .Values.gateway.ingress.enabled }}
+    {{ include "test-env.previewUrl" . }}
+
+    …and still, if DNS has not caught up yet:
+{{- end }}
     kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "test-env.gatewayServiceName" . }} 8080:{{ .Values.gateway.service.port }}
     curl http://localhost:8080/readyz
 

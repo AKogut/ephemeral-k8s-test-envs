@@ -1,0 +1,24 @@
+# A cluster whose control-plane node can host an ingress controller.
+#
+# ingress-nginx's kind manifest pins its controller with
+# `nodeSelector: ingress-ready: "true"`, a label kind does not set on its own.
+# Without it the pod stays Pending and the only symptom is a rollout that never
+# finishes — which is how the first two runs of the preview-URL job failed,
+# once on the admission webhook and once on this.
+#
+# No extraPortMappings: nothing here reaches the environment from the host. The
+# check asks for it from inside the cluster with the Host header DNS would
+# supply, which is what tests the Ingress rule rather than a port-forward
+# wearing a hostname.
+#
+#   kind create cluster --name preview --config scripts/kind-ingress.yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"

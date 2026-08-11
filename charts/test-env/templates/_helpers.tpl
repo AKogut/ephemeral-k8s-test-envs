@@ -176,6 +176,18 @@ Environment variables every service shares.
       fieldPath: metadata.namespace
 {{- end -}}
 
+{{/*
+Where a person opens this environment. The namespace carries the name, so the
+URL does too: pr-123.preview.example.com.
+*/}}
+{{- define "test-env.previewHost" -}}
+{{- printf "%s.%s" .Release.Namespace .Values.gateway.ingress.domain -}}
+{{- end -}}
+
+{{- define "test-env.previewUrl" -}}
+{{- printf "%s://%s" (ternary "https" "http" .Values.gateway.ingress.tls.enabled) (include "test-env.previewHost" .) -}}
+{{- end -}}
+
 {{- define "test-env.postgresName" -}}
 {{- printf "%s-postgres" (include "test-env.fullname" .) -}}
 {{- end -}}
@@ -400,6 +412,9 @@ as a Pending pod rather than as a number that was too small.
 {{- end -}}
 {{- if not (has .Values.notes.authMode (list "jwt-only" "verify-with-auth-service")) -}}
 {{- fail (printf "notes.authMode must be jwt-only or verify-with-auth-service, got %q" .Values.notes.authMode) -}}
+{{- end -}}
+{{- if and .Values.gateway.ingress.enabled (not .Values.gateway.ingress.domain) -}}
+{{- fail "gateway.ingress.domain is required when gateway.ingress.enabled: an Ingress with no host publishes the environment on every hostname the controller answers" -}}
 {{- end -}}
 {{- if not (has .Values.database.backend (list "sqlite" "postgres")) -}}
 {{- fail (printf "database.backend must be sqlite or postgres, got %q" .Values.database.backend) -}}

@@ -98,6 +98,27 @@ tears everything down, and verifies the teardown.
 ./scripts/local-demo.sh --cleanup-only  # clean up a previous --keep
 ```
 
+### An environment with a hostname
+
+```bash
+helm install demo ./charts/test-env --namespace demo --create-namespace \
+  --set gateway.ingress.enabled=true \
+  --set gateway.ingress.domain=preview.example.com \
+  --wait
+```
+
+The host is `<namespace>.<domain>`, so the URL carries the same name as
+everything else the environment owns, and the Ingress is namespaced — it goes
+when the namespace does, which is what stops a preview URL outliving what it
+points at.
+
+**Off by default, and not because of kind.** A preview URL is a public
+deployment of unreviewed code: every pull request, including the failing ones,
+reachable by anyone who guesses a number. Decide who may reach it first — an
+OAuth proxy, an IP allow-list, basic auth from a Secret — and put it in
+`gateway.ingress.annotations`. The chart does not choose for you, because the
+answer depends on a cluster it cannot see.
+
 ### An environment with a real database
 
 ```bash
