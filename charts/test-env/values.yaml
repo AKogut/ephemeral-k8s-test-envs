@@ -158,6 +158,20 @@ tests:
   tolerations: []
   affinity: {}
 
+  # -- Spread the shard pods across nodes. Removing the shared volume made this
+  # possible; this is what makes it happen. Without it the scheduler is free to
+  # put every shard on one node — its own default spreading tolerates a skew of
+  # 3 — and the run is green while the parallelism is gone.
+  spread:
+    enabled: true
+    maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    # -- DoNotSchedule makes the spread a guarantee, which is what lets CI
+    # assert it. The cost is the honest one: where a node cannot take its share,
+    # a shard pod stays Pending instead of piling onto a neighbour and hiding
+    # the fact. ScheduleAnyway turns it back into a preference.
+    whenUnsatisfiable: DoNotSchedule
+
   # -- Where per-shard results go: object storage, reached over the network,
   # so nothing about the results decides which node a shard may run on.
   # See ADR 0007.

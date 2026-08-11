@@ -148,8 +148,17 @@ minio        worker
 ```
 
 Both workers used, with shards 0 and 2 reading and writing storage that lives on
-the other node — over a Service, which constrains nothing about scheduling. CI
-asserts this on every pull request and fails if every shard lands on one node.
+the other node — over a Service, which constrains nothing about scheduling.
+
+**Possible is not the same as guaranteed**, and for a while this project had only
+the first. Nothing pins a shard to a node any more, but nothing spread them
+either: the scheduler's default spreading tolerates a skew of 3, so both shards
+of a two-shard run landed on one of two healthy workers — observed, not
+theorised. The run was green and half the environment it claimed to be, which is
+the same silent failure the volume caused, arriving by a different route. The
+shard Job therefore carries its own `topologySpreadConstraints`
+(`maxSkew: 1` over `kubernetes.io/hostname`, `DoNotSchedule`), and CI asserts on
+every pull request that the pods covered every node that could have taken one.
 
 An environment brings its own MinIO (one replica, `emptyDir` — the results die
 with the namespace, so there is nothing to persist), or is pointed at a real
