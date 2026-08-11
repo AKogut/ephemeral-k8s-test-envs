@@ -14,7 +14,8 @@
     "test": "node --import tsx --test src/*.test.ts",
     "test:coverage": "node --import tsx --test --experimental-test-coverage --test-coverage-exclude='**/*.test.ts' --test-coverage-lines=99 --test-coverage-branches=94 --test-coverage-functions=100 src/*.test.ts",
     "shard": "node --import tsx src/shard-tests.ts",
-    "weights": "node --import tsx src/update-weights.ts"
+    "weights": "node --import tsx src/update-weights.ts",
+    "fleet": "node --import tsx src/fleet-report.ts"
   },
   "devDependencies": {
     "@types/node": "^22.18.8",
