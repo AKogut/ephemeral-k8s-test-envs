@@ -133,7 +133,16 @@ database:
   postgres:
     # -- Deploy a StatefulSet, or point at a server that already exists.
     deploy: true
-    image: postgres:17.6-alpine
+    image:
+      repository: postgres
+      # Pinned: a database that changes under the suite would make an upstream
+      # release and a real regression look identical.
+      tag: 17.6-alpine
+      # Its own policy, not image.pullPolicy. That one is about this project's
+      # five images, which CI side-loads into the cluster and therefore sets to
+      # Never; an upstream image has to be pulled, and inheriting Never gives
+      # ErrImageNeverPull on a pod nobody thought to load.
+      pullPolicy: IfNotPresent
     # -- Left empty while `deploy`, the chart points the services at the
     # Service it creates. Set it to use an existing server instead.
     host: ""

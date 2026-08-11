@@ -1033,6 +1033,24 @@ jobs:
           tag: ${{ needs.build.outputs.tag }}
           from-registry: ${{ env.CAN_WRITE }}
 
+      - name: Side-load Postgres too
+        run: |
+          set -euo pipefail
+          # The chart's own images are loaded above and installed with
+          # pullPolicy Never. Postgres is upstream and has its own policy, so
+          # the node would pull it — from Docker Hub, whose anonymous rate
+          # limit is shared across the runner fleet and fails at the worst
+          # possible moment. Pulling once here makes the job deterministic.
+          #
+          # The tag comes from the chart rather than being repeated, so the two
+          # cannot drift.
+          ref=$(helm template pgenv ./charts/test-env --set database.backend=postgres \
+            | grep -m1 -oE 'image: "postgres:[^"]+"' | cut -d'"' -f2)
+          [ -n "$ref" ] || { echo "::error::could not read the Postgres image from the chart"; exit 1; }
+          echo "loading $ref"
+          docker pull -q "$ref"
+          kind load docker-image --name pgenv "$ref"
+
       - name: Install with the database a network away, and two replicas each
         run: |
           # replicaCount 2 is the assertion, not a detail. With SQLite in the
