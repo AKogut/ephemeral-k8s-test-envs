@@ -148,6 +148,31 @@ One environment at the CI resource requests:
 | MinIO (results bucket) | 50m | 128Mi |
 | **Steady state after tests finish** | **150m** | **352Mi** |
 
+Those are requests. What an environment is *permitted* to take is a separate
+number, and since [issue #83](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/83)
+it is enforced rather than implied — a `ResourceQuota` per namespace, summed
+from what the release declares plus 20% headroom:
+
+| `tests.shards` | requests.cpu | requests.memory | pods |
+|---:|---:|---:|---:|
+| 1 | 480m | 883Mi | 11 |
+| 4 (default) | 840m | 1574Mi | 14 |
+| 16 | 2280m | 4339Mi | 26 |
+
+So a 4-vCPU node fits about four default environments by request, and the ceiling
+moves with the shard count rather than being a number someone has to remember to
+update. A pod asking for more than the namespace has left is refused by the API
+server:
+
+```
+Error from server (Forbidden): pods "hog" is forbidden: exceeded quota:
+demo-test-env, requested: requests.cpu=5, used: requests.cpu=250m,
+limited: requests.cpu=840m
+```
+
+That is the difference between one runaway environment and a cluster where the
+pods left Pending belong to somebody else's pull request.
+
 150 millicores is small. The problem is never one environment — it is thirty of
 them, each left behind by a merged PR nobody thought about again. Thirty leaked
 environments is 4.5 vCPU and 10.3 GB of memory reserved permanently, for code
@@ -200,6 +225,7 @@ answer "what is this and who created it?" months later.
   self-destruct Job gets the same guarantee without anything permanent to operate.
 - **Cost attribution labels.** On a real cluster every namespace would carry
   cost-centre labels for chargeback. Here there is nothing to charge back to.
-- **A quota per environment.** `ResourceQuota` and `LimitRange` per namespace are
-  what stops one runaway environment from starving a shared cluster. Worth adding
-  the day this runs anywhere shared; noise on a single-node kind cluster.
+- **Cross-namespace fairness.** The quota bounds one environment; it does nothing
+  about thirty of them filling a cluster between them. That needs a per-cluster
+  budget and an admission decision about who gets to create the thirty-first —
+  a platform concern rather than a chart one.

@@ -45,9 +45,10 @@ flowchart LR
     B --> D[helm install<br/>namespace pr-N]
     D --> E[gateway · auth · notes<br/>3 deployments, 4 pods]
     D --> S[Indexed Job<br/>4 shard pods]
+    D --> M[(MinIO<br/>results bucket)]
     E <--> S
-    S --> V[(shared volume)]
-    V --> A[aggregator Job]
+    S -->|uploads shard-N/| M
+    M --> A[aggregator Job]
     A --> R[one Allure report<br/>+ PR comment]
     R --> T[teardown]
     T --> P[verify-teardown.sh<br/>asserts nothing remains]
@@ -343,13 +344,13 @@ overlooked:
 ## What v1.0 does not do
 
 Different from the list above. Those are omissions with an argument. These are
-**limitations** — nine of them, each tracked as an issue that says what breaks
-today, what "done" would mean, and what is still undecided.
+**limitations** — each tracked as an issue that says what breaks today, what
+"done" would mean, and what is still undecided. Two are now closed.
 
 | | Why it matters |
 |---|---|
-| [#82](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/82) Results on a shared `ReadWriteOnce` volume | Pins every shard to one node. The measured 3.19× is a single-machine number |
-| [#83](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/83) No `ResourceQuota` per namespace | One environment can starve a shared cluster |
+| ~~[#82](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/82) Results on a shared `ReadWriteOnce` volume~~ | Done — results go to object storage; CI asserts the shards spread across nodes |
+| ~~[#83](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/83) No `ResourceQuota` per namespace~~ | Done — the quota is computed from the release and enforced |
 | [#84](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/84) No preview URL | Only reachable by `port-forward`, so only by engineers with cluster access |
 | [#85](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/85) Shard weights maintained by hand | Balance decays silently as the suite grows |
 | [#86](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/86) Only ever run on `kind` | "No provider dependency" is an argument, not yet a result |
