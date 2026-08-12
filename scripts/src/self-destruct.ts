@@ -92,9 +92,27 @@ async function main(): Promise<number> {
   return 0;
 }
 
+/**
+ * `fetch` reports every connection-level failure as the string "fetch failed"
+ * and hides what actually happened — DNS, TLS, refused, timed out — one level
+ * down in `cause`. This pod's whole job is to talk to the API server, so that
+ * one word was the entire diagnosis available when it could not: three separate
+ * experiments went into finding out what a single line could have said.
+ */
+function describe(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+
+  const parts = [error.message];
+  for (let cause = error.cause; cause instanceof Error; cause = cause.cause) {
+    const code = (cause as NodeJS.ErrnoException).code;
+    parts.push(code ? `${code}: ${cause.message}` : cause.message);
+  }
+  return parts.join(' — caused by ');
+}
+
 main()
   .then((code) => process.exit(code))
   .catch((error: unknown) => {
-    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(`${describe(error)}\n`);
     process.exit(1);
   });

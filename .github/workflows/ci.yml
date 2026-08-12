@@ -65,6 +65,14 @@ env:
   # Pinned for the same reason, and the kind-specific manifest because it is the
   # one that works without a cloud load balancer.
   INGRESS_NGINX_MANIFEST: https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.12.0/deploy/static/provider/kind/deploy.yaml
+  # And the largest dependency of all, which was the one left floating: without
+  # these two, the Kubernetes version of every environment in this pipeline is
+  # whatever the action's default kind happens to ship this month, and
+  # `local-demo.sh` reproduces a CI failure on a different Kubernetes than the
+  # one that produced it. Both are pinned to the same pair, and
+  # scripts/local-demo.sh pins the same node image.
+  KIND_VERSION: v0.32.0
+  KIND_NODE_IMAGE: kindest/node:v1.35.0
 
 jobs:
   chart:
@@ -926,12 +934,26 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # kind's default CNI implements pod networking and ignores NetworkPolicy
+      # entirely, which is why the chart's policy went several releases while
+      # being wrong in three separate ways. Calico replaces it, and the config
+      # disables the default CNI so there is nothing to replace it *over*.
+      #
+      # Created through the same action as every other cluster here rather than
+      # with the runner's own `kind`: that binary is whatever the runner image
+      # ships, so this was the one cluster in the pipeline running an
+      # unpinned Kubernetes.
       - name: Create a cluster whose CNI enforces policy
+        uses: helm/kind-action@v1
+        with:
+          version: ${{ env.KIND_VERSION }}
+          node_image: ${{ env.KIND_NODE_IMAGE }}
+          cluster_name: netpol
+          config: scripts/kind-networkpolicy.yaml
+          wait: 120s
+
+      - name: Install Calico, and wait for it to mean it
         run: |
-          # kind's default CNI implements pod networking and ignores
-          # NetworkPolicy entirely, which is why the chart's policy went several
-          # releases while being wrong in three separate ways. Calico replaces it.
-          kind create cluster --name netpol --config scripts/kind-networkpolicy.yaml --wait 120s
           kubectl apply -f "$CALICO_MANIFEST"
           kubectl -n kube-system rollout status daemonset/calico-node --timeout=300s
           kubectl wait --for=condition=Ready node --all --timeout=180s
@@ -1025,6 +1047,8 @@ jobs:
       - name: Create kind cluster
         uses: helm/kind-action@v1
         with:
+          version: ${{ env.KIND_VERSION }}
+          node_image: ${{ env.KIND_NODE_IMAGE }}
           cluster_name: preview
           # ingress-nginx's kind manifest wants a node labelled
           # ingress-ready=true, which kind does not set on its own.
@@ -1180,6 +1204,8 @@ jobs:
       - name: Create kind cluster
         uses: helm/kind-action@v1
         with:
+          version: ${{ env.KIND_VERSION }}
+          node_image: ${{ env.KIND_NODE_IMAGE }}
           cluster_name: selfdestruct
           wait: 120s
 
@@ -1305,6 +1331,8 @@ jobs:
       - name: Create kind cluster
         uses: helm/kind-action@v1
         with:
+          version: ${{ env.KIND_VERSION }}
+          node_image: ${{ env.KIND_NODE_IMAGE }}
           cluster_name: pgenv
           wait: 120s
 
@@ -1483,6 +1511,8 @@ jobs:
       - name: Create kind cluster
         uses: helm/kind-action@v1
         with:
+          version: ${{ env.KIND_VERSION }}
+          node_image: ${{ env.KIND_NODE_IMAGE }}
           cluster_name: ephemeral-test-envs
           # Two workers, so shard pods have somewhere else to go. On a
           # single-node cluster the property asserted below cannot fail, which

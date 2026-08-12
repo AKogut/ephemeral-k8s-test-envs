@@ -8,7 +8,7 @@ Then the namespace is destroyed — and the pipeline proves it.**
 
 [![Ephemeral environment](https://github.com/AKogut/ephemeral-k8s-test-envs/actions/workflows/ci.yml/badge.svg)](https://github.com/AKogut/ephemeral-k8s-test-envs/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Kubernetes](https://img.shields.io/badge/kubernetes-1.31%2B-326ce5?logo=kubernetes&logoColor=white)](https://kubernetes.io/)
+[![Kubernetes](https://img.shields.io/badge/kubernetes-1.35.0-326ce5?logo=kubernetes&logoColor=white)](https://kubernetes.io/)
 [![Helm](https://img.shields.io/badge/helm-v3-0f1689?logo=helm&logoColor=white)](https://helm.sh/)
 [![Playwright](https://img.shields.io/badge/playwright-API-2EAD33?logo=playwright&logoColor=white)](https://playwright.dev/)
 [![Node](https://img.shields.io/badge/node-22-5fa04e?logo=node.js&logoColor=white)](https://nodejs.org/)
