@@ -1,38 +1,55 @@
 # The CI pipeline
 
-One workflow — [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) — takes a
-pull request from "opened" to "environment destroyed and proven gone".
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) takes a pull request
+from "opened" to "environment destroyed and proven gone". It is the only
+workflow a pull request runs; the other two are
+[`fleet.yml`](../.github/workflows/fleet.yml), weekly, and
+[`publish-wiki.yml`](../.github/workflows/publish-wiki.yml), on merge.
 
 ```
-verify ──► build (5 images, matrix) ──► ephemeral-environment
-                                          │
-                                          ├─ kind create cluster
-                                          ├─ helm install → namespace pr-N
-                                          ├─ 4 shard pods run 105 tests
-                                          ├─ aggregator merges results
-                                          ├─ report → artifact + PR comment
-                                          ├─ helm uninstall + delete namespace   (always)
-                                          ├─ verify-teardown.sh                  (always)
-                                          └─ kind delete cluster                 (always)
+        no cluster needed — all at once                  one cluster each
+┌──────────────────────────────────┐              ┌──────────────────────────┐
+│ Helm chart          Lint         │              │ NetworkPolicy enforced   │
+│ Shard planner       Typecheck    │   Package    │ Preview URL              │
+│ API suite typecheck Shell scripts│ ──► ×5 ────► │ Self-destruct            │
+│ 3× build image + scan            │   images     │ Environment on Postgres  │
+│ compose stack   compose+Postgres │              │ Deploy, test, aggregate, │
+└──────────────────────────────────┘              │ tear down                │
+                                                  └──────────────────────────┘
 ```
 
-## Job 1 — `verify`
+Seventeen jobs, in three ranks. Nothing in the first rank depends on anything
+else, so it all starts at once; `Package` waits for **all** of it; the five
+cluster jobs then run in parallel, each creating and destroying its own kind
+cluster.
 
-Everything that does not need a cluster, so a typo fails in under a minute rather
-than after a five-minute deploy.
+The shape is deliberate. A guarantee that is only checked as a step inside the
+main environment job is a guarantee that stops being checked the moment that job
+fails earlier for an unrelated reason. So each of the four properties worth
+promising — the policy is enforced, the URL works, the environment destroys
+itself, it runs on a real database — is a job that stands on its own and says in
+its name what it proves.
 
-| Step | Catches |
+## Rank 1 — everything that needs no cluster
+
+Split across eleven jobs rather than gathered into one, so a typo in a shell
+script does not wait behind a coverage run, and the run page names what broke.
+
+| Job | Catches |
 |---|---|
-| `npm run lint` | ESLint with type-aware rules across all five packages |
-| `npm run typecheck` | Type errors across all five packages |
-| `npm run test:coverage` | 210 unit tests — sharding, aggregation, CLI parsing, the cluster client, SigV4, the fleet report, the zip reader — **gated** at 99% lines / 94% branches / 100% functions |
-| `shellcheck scripts/*.sh` | Shell bugs, which are otherwise found in production |
-| `npm run helm:lint` | Chart syntax, with default and CI values |
-| Render at 1, 2, 4, 8, 16 shards | A chart that only works at the default shard count |
-| Assert invalid values are **rejected** | Guards that silently stopped guarding |
-| `npm run shard:plan` | Prints the plan into the log, so a bad split is visible |
+| `Lint` | ESLint with type-aware rules across all five packages |
+| `Typecheck and build` | Type errors, and a build that no longer compiles |
+| `API suite typecheck` | The same, for the Playwright suite |
+| `Shell scripts` | `shellcheck` — shell bugs are otherwise found in production |
+| `Shard planner` | 210 unit tests, **gated** at 99% lines / 94% branches / 100% functions, with MinIO alongside so the storage client is tested against a real endpoint; then asserts the plan covers every spec file exactly once |
+| `Helm chart` | Lint with both value sets; render at 1, 2, 4, 8, 16 shards; the quota tracks the shard count; no shared volume survives anywhere in the chart; invalid values are **rejected**; security defaults are actually applied |
+| `Build <service> image` ×3 | The image builds, is scanned, and starts, serves and shuts down cleanly |
+| `Build the test runner image` | The planner works *inside* the image, and no browsers came with it |
+| `Build the aggregator image` | It carries no production dependencies, all three entrypoints respond, it merges a synthetic sharded run correctly, a missing shard directory fails aggregation, and the self-destruct entrypoint refuses to run outside a pod |
+| `docker compose stack` | The three services agree they are one environment |
+| `docker compose stack on Postgres` | Migrations ran, ran *before* the services, and applying them twice changes nothing; the whole suite passes; two replicas share one database |
 
-That fifth row is the one worth copying. It is easy to test that a chart renders;
+The chart job is the one worth copying. It is easy to test that a chart renders;
 it is more useful to test that it *refuses* to render nonsense:
 
 ```bash
@@ -46,8 +63,8 @@ done
 
 ### Every image is scanned where it is built
 
-The three image-building jobs each run Trivy against the image they just loaded —
-no rebuild, no separate job pulling from a registry. Two passes:
+Each of the five image builds runs Trivy against the image it just loaded — no
+rebuild, no separate job pulling from a registry. Two passes:
 
 - **Record** — fixable `HIGH` and `CRITICAL` into GitHub code scanning, one
   category per image. Never fails the build; it is the trend line.
@@ -61,7 +78,7 @@ logic: a vulnerability with no available fix is information, not a decision.
 See [SECURITY.md](../SECURITY.md#vulnerability-scanning) for what the first run
 found and what was changed because of it.
 
-## Job 2 — `build`
+## Rank 2 — `Package`
 
 Five images, built in parallel with a matrix, and delivered to the cluster jobs
 by whichever route the run is allowed to use: pushed to GHCR, or exported as a
@@ -86,10 +103,31 @@ cache-to:   type=gha,scope=${{ matrix.component }},mode=max
 Without the scope, all five images share one cache key and a change to any one of
 them invalidates the other four.
 
-Each build records its image size into the job summary, which is where the
-numbers in the README come from.
+Each image is therefore built twice in a run — once in rank 1, where it is
+scanned and exercised, and once here, where it is packaged. That reads like
+waste and is not: the second build is a cache hit, and the alternative is a
+single job that both gates the image and publishes it, which means an image is
+pushed before anything has run against it. The size numbers in the README come
+from the rank-1 build, which is the one with a `Report image size` step.
 
-## Job 3 — `ephemeral-environment`
+## Rank 3 — the cluster jobs
+
+Five, each on its own kind cluster, all after `Package`. Four exist because the
+property they prove would otherwise be a sentence in a document:
+
+| Job | What it proves | How it could pass without meaning anything |
+|---|---|---|
+| `NetworkPolicy is enforced` | The suite passes with every packet policed, an outside pod is refused — **and reachable once the policy is removed** | Without that last step, a CNI that ignores policy looks identical to one that enforces it |
+| `The preview URL reaches the gateway` | A request to `<namespace>.<domain>` reaches the gateway, and the URL dies with the environment | An Ingress that renders is not an Ingress that routes |
+| `The self-destruct layer fires, and leaves nothing` | Nobody deletes the namespace and it goes anyway, leaving nothing cluster-scoped — **while a control environment is still standing** | A namespace that was never created is also "gone" |
+| `An environment on Postgres` | Migrations ran once before anything served, both data services really run two replicas, an account registered on one exists on the other, the suite passes, and the volume goes with the namespace | Two replicas that never talk to each other prove nothing about a shared database |
+
+The third column is the point. Each of these jobs contains a step whose only job
+is to make a false positive impossible, because the failure mode of an
+infrastructure assertion is not that it fails — it is that it passes for the
+wrong reason.
+
+## `Deploy, test, aggregate, tear down`
 
 ### Naming
 
@@ -103,13 +141,16 @@ cluster can be traced back to what created it.
 
 ### Images go in through the side door
 
-```bash
-docker pull "$ref"
-kind load docker-image --name ephemeral-test-envs "$ref"
+```yaml
+- uses: ./.github/actions/load-images
+  with:
+    from-registry: ${{ env.CAN_WRITE }}
 ```
 
 Pulling once on the host and side-loading beats configuring registry credentials
-inside the kind cluster and having four shard pods each pull the same image.
+inside the kind cluster and having four shard pods each pull the same image. All
+five cluster jobs get their images this way, through the one composite action
+described under [a pull request from a fork](#a-pull-request-from-a-fork).
 
 ### Running the suite
 
@@ -127,6 +168,22 @@ skip all four.
 
 Each shard's logs are emitted in a collapsible `::group::`, so a failure is one
 click away rather than buried in a wall of output.
+
+### What the run asserts about itself while it is up
+
+Three steps ask questions that only a live environment can answer:
+
+- **The quota actually refuses something.** A pod is submitted that the
+  namespace's `ResourceQuota` must reject. A quota nothing has ever bounced is a
+  number in a manifest.
+- **The shards actually spread across the cluster.** Asserted against the nodes
+  that were *schedulable*, not against a fixed number — a run on a cluster with
+  one healthy worker should report a smaller spread, not a failure.
+- **The report was actually collected.** Checked after teardown, because the
+  copy-out step runs against a namespace that is about to stop existing.
+
+And `npm run weights:update` regenerates the shard weights from the durations
+this run measured, so the plan the next run computes is informed by the last one.
 
 ### Reporting
 
@@ -186,14 +243,19 @@ Scoped per job rather than granted once at the top:
 
 ```yaml
 permissions:
-  contents: read          # workflow default
+  contents: read            # workflow default; eight jobs never ask for more
 
-# build:
-  packages: write         # push to GHCR
+# the three image-building jobs:
+  security-events: write    # publish the vulnerability scan
 
-# ephemeral-environment:
+# Package:
+  packages: write           # push to GHCR
+
+# the five cluster jobs:
   packages: read
-  pull-requests: write    # post the summary comment
+
+# …and Deploy, test, aggregate, tear down, alone:
+  pull-requests: write      # post the summary comment
 ```
 
 ## A pull request from a fork
@@ -207,13 +269,16 @@ So the workflow computes once, at the top, whether it is holding a token that ca
 write anything:
 
 ```yaml
-CAN_WRITE: ${{ github.event_name != 'pull_request'
-            || github.event.pull_request.head.repo.full_name == github.repository }}
+CAN_WRITE: ${{ !inputs.simulate_fork
+            && (github.event_name != 'pull_request'
+                || github.event.pull_request.head.repo.full_name == github.repository) }}
 ```
 
-and four steps are gated on it — the registry push, the layer cache **write**,
-the code-scanning upload, and the summary comment. Everything else runs
-identically.
+Four things are gated on it — the registry push, the layer cache **write**, the
+code-scanning upload (once per image-building job) and the summary comment.
+Everything else runs identically. The `simulate_fork` term is what lets this
+repository run the fork path on purpose; see
+[running it by hand](#running-it-by-hand).
 
 | | Branch in this repository | Fork |
 |---|---|---|
@@ -223,17 +288,17 @@ identically.
 | Layer cache | read and written | read only |
 | Trivy findings in code scanning | yes | job log only |
 | Report | job summary + PR comment | job summary |
-| `Deploy, test, aggregate, tear down` | runs | **runs** |
+| All five cluster jobs | run | **run** |
 
 That last row is the point of the whole arrangement. The obvious fix — skip the
 jobs that cannot work on a fork — is worse than the failure it removes: a
 skipped job satisfies a required status check, so the most important check in
 the pipeline would report success without having run, on precisely the pull
 requests that deserve the most scrutiny. The registry is a convenience for
-moving five tarballs between two jobs. Nothing about *testing* the change needs
-it.
+moving five tarballs from one job to the next. Nothing about *testing* the
+change needs it.
 
-Both cluster jobs get their images through one composite action,
+All five cluster jobs get their images through one composite action,
 [`.github/actions/load-images`](../.github/actions/load-images/action.yml), which
 takes either route and then asserts that all five references are in every node's
 image store — because the chart installs with `pullPolicy: Never`, where a
@@ -269,4 +334,9 @@ failure locally is one command, not a re-derivation of what the workflow does.
   [ADR 0009](adr/0009-reference-implementation-not-a-platform.md).
 - **A `workflow_call` interface.** Same decision: the pipeline is meant to be
   read and reimplemented, not called.
-- **Nightly runs.** Nothing to catch: there is no long-lived environment to drift.
+- **Nightly runs of this workflow.** Nothing to catch: there is no long-lived
+  environment to drift. What *is* scheduled is
+  [`fleet.yml`](../.github/workflows/fleet.yml), weekly — it reads the run
+  history rather than deploying anything, because the questions it answers
+  (does teardown hold across runs, how long do environments live, is the shard
+  split still balanced) cannot be asked from inside a single run.

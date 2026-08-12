@@ -218,19 +218,13 @@ Every image is a three-stage build: dependencies, compile, runtime. The compiler
 type definitions and the native toolchain for `better-sqlite3` stay in the
 discarded stages.
 
-Measured with `docker image inspect --format '{{.Size}}'`; regenerate with
-`make image-sizes` or the `Record image size` step in CI.
-
-| Image | Single-stage (`node:22`) | Multi-stage (`node:22-slim`) | Reduction |
-|---|---:|---:|---:|
-| `auth-service` | see CI summary | see CI summary | — |
-| `notes-service` | | | |
-| `gateway` | | | |
-| `api-tests` | | | |
-| `aggregator` | | | |
-
-> The table is filled in from a real run rather than from estimates — see
-> [Image sizes](../README.md#image-sizes) in the README for the current numbers.
+The measured sizes are
+[in the README](../README.md#3-images-built-for-the-job-they-actually-do) and
+deliberately not repeated here — a table of numbers kept in two documents goes
+stale in one of them. Every run regenerates them: the `Report image size` step
+in each image-building job runs
+`docker image inspect --format '{{.Size}}'` and writes the result into the job
+summary.
 
 The `api-tests` image deserves a note of its own. The obvious base for a
 Playwright suite is `mcr.microsoft.com/playwright`, which ships Chromium, Firefox,
@@ -261,4 +255,4 @@ costs nothing. On a cloud cluster it costs money every hour until someone notice
 - [Cost and cleanup](cost-and-cleanup.md) — the teardown guarantees, stated precisely
 - [CI pipeline](ci-pipeline.md) — a step-by-step walk through the workflow
 - [Local development](local-development.md) — running everything without a cluster
-- [Architecture decisions](adr/) — the six decisions worth arguing about
+- [Architecture decisions](adr/) — the nine decisions worth arguing about

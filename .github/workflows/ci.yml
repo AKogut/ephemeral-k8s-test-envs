@@ -903,9 +903,9 @@ jobs:
         with:
           name: image-${{ matrix.component }}
           path: /tmp/${{ matrix.component }}.tar
-          # The only consumers are two jobs in this same run. Keeping five
-          # image tarballs for a fortnight after that would be storage spent
-          # on nothing.
+          # The only consumers are the five cluster jobs in this same run.
+          # Keeping five image tarballs for a fortnight after that would be
+          # storage spent on nothing.
           retention-days: 1
           # A missing tarball here becomes ErrImageNeverPull twenty minutes
           # later in a job that reads as if the cluster were at fault.
