@@ -275,7 +275,8 @@ scripts/            shard planner · result merge · k8s + S3 + zip clients (210
                     local-demo.sh · fetch-results.sh · verify-teardown.sh
 charts/test-env/    The Helm chart — one isolated environment per release
 docs/               architecture · sharding · cost-and-cleanup · ci-pipeline · 9 ADRs
-.github/workflows/  One workflow: verify → build → deploy → shard → aggregate → destroy
+.github/workflows/  ci: check → package → 5 cluster jobs, each proving one guarantee
+                    fleet: weekly, reads run history · publish-wiki: on merge
 ```
 
 ## Commands
@@ -328,7 +329,7 @@ force pushes, no deletions. Board:
 | [Cost and cleanup](docs/cost-and-cleanup.md) | The three teardown layers and what each one misses |
 | [CI pipeline](docs/ci-pipeline.md) | The workflow, step by step |
 | [Local development](docs/local-development.md) | Three ways to run it; full config reference |
-| [ADRs](docs/adr/) | The six decisions worth arguing about |
+| [ADRs](docs/adr/) | The nine decisions worth arguing about |
 
 Runbooks, an FAQ and longer-form background live in the
 [wiki](https://github.com/AKogut/ephemeral-k8s-test-envs/wiki).

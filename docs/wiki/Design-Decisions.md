@@ -1,6 +1,6 @@
 # Design decisions
 
-Six decisions where someone could reasonably have chosen otherwise. Each is
+Nine decisions where someone could reasonably have chosen otherwise. Each is
 recorded as an ADR in the repository, with context, rationale, consequences in
 **both** directions, and the alternatives that were rejected.
 

@@ -59,8 +59,11 @@ independent — so two replicas is a real test of the multi-pod path, not a prop
 - `auth-service` is a single point of failure within an environment. Irrelevant
   here: the environment lives for minutes and a pod restart is recovered by the
   suite's readiness wait.
-- The project does not demonstrate a horizontally scaled stateful service. That
-  would need a real database, which is a substantial addition — see below.
+- The *default* environment does not demonstrate a horizontally scaled stateful
+  service. It took a real database to lift that, which is the substantial
+  addition described below and now shipped: `database.backend=postgres` runs two
+  replicas of each data service against one database, and CI asserts an account
+  registered on one replica exists on the other.
 
 ## What scaling the data services would require
 
@@ -77,16 +80,17 @@ is the useful part: a `pre-install` hook runs before the chart's own objects
 exist, so it looks for a database this release has not created yet. See
 [ADR 0008](0008-networked-database-mode.md).
 
-Deliberately out of scope **for the default**. That list is no longer
-hypothetical — it is what [ADR 0008](0008-networked-database-mode.md) implements,
-behind `DB_BACKEND=postgres`, with SQLite still the default for exactly the
-reasons argued here. What follows is why it is not what an environment does
-unless it is asked to.
+That list is no longer hypothetical — it is what
+[ADR 0008](0008-networked-database-mode.md) implements, behind
+`database.backend=postgres`, with SQLite still the default for exactly the
+reasons argued here.
 
-It adds a database to seed, migrate, wait for and
-tear down — and the subject of this project is the environment lifecycle, not the
+Why it stays behind a flag: it adds a database to seed, migrate, wait for and
+tear down, and the subject of this project is the environment lifecycle, not the
 application's persistence layer. SQLite on an `emptyDir` gives a real database
 with real transactions, real constraints and real SQL, with nothing to operate.
+An environment that needs the other thing asks for it, and CI asks on every pull
+request so that the path stays proven rather than merely available.
 
 Note that `notes-service` still makes a real cross-pod network call to
 `auth-service` on every new token, so single-replica does not mean the deployment
