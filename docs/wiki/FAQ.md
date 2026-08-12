@@ -65,10 +65,15 @@ the `LIKE`/`ESCAPE` bug the suite caught is a genuine SQL bug, not a toy one.
 What it is not is a *networked* database, which is why the data services run a
 single replica.
 
-Adding Postgres would mean a StatefulSet, a PVC, migrations, a readiness gate and
-a seeding step to build, wait for and tear down — all in service of a persistence
-layer that is not the subject of this project.
-See [ADR 0006](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/docs/adr/0006-single-replica-data-services.md).
+That was once the whole answer. It is now the answer for the *default*:
+`database.backend=postgres` brings a StatefulSet, a migration Job that runs
+exactly once, readiness that reflects the database, and data services that run
+more than one replica. SQLite stays the default because it is what keeps an
+environment a three-minute command with nothing to wait for.
+
+See [ADR 0006](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/docs/adr/0006-single-replica-data-services.md) for the default and
+[ADR 0008](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/docs/adr/0008-networked-database-mode.md) for the other mode and what it
+costs.
 
 ## Why is `replicaCount: 1` on two of the three services? That looks unfinished.
 
@@ -81,6 +86,10 @@ Scaling a service whose state lives in the pod is not a demonstration of
 horizontal scaling; it is a demonstration of not having thought about state. The
 gateway is genuinely stateless, so it runs two replicas and every run exercises
 the multi-pod path where it means something.
+
+With `database.backend=postgres` the constraint goes away and both data services
+run two replicas — CI proves it by registering an account through the gateway and
+requiring every subsequent login to succeed, whichever replica answers.
 
 ## Why not an operator or a CRD? That is the "real" Kubernetes way.
 
@@ -167,36 +176,37 @@ The design has no provider dependency, but four things move:
 |---|---|---|
 | Cluster | created per run | long-lived; the *namespace* is the ephemeral unit |
 | Images | `kind load` | pulled from a registry with credentials |
-| Result volume | RWO local-path | RWX, or object storage |
-| Ingress | `port-forward` | a route per namespace, `pr-123.preview.example.com` |
+| Results | object storage, in-cluster MinIO | the same client, pointed at a real bucket |
+| Ingress | in the chart, off by default | on, with DNS, TLS and a decision about who may reach it |
 
 And the teardown story stops being a tidiness concern and starts being a billing
 one.
 
 ## What would you do next?
 
-All nine known limitations of v1.0 are tracked under the
-[Beyond v1.0 milestone](https://github.com/AKogut/ephemeral-k8s-test-envs/milestone/7).
-Each issue states what breaks today, what "done" would mean, and what is still an
-open question rather than a decided plan.
+Ten limitations of v1.0 were tracked under the
+[Beyond v1.0 milestone](https://github.com/AKogut/ephemeral-k8s-test-envs/milestone/7),
+each stating what broke, what "done" would mean, and what was still an open
+question rather than a decided plan. **Eight are closed**, and each closed by
+making the thing true rather than by rewording the claim:
 
-In order of what actually changes the answer to "could a team use this":
+| | |
+|---|---|
+| [#82](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/82) | results in object storage, so nothing pins a shard to a node |
+| [#83](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/83) | a quota computed from the release, proved by a pod it refuses |
+| [#85](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/85) | shard weights measured from a run instead of typed |
+| [#87](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/87) | the guarantees measured across runs, not only inside one |
+| [#88](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/88) | the direction decided: a reference implementation |
+| [#89](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/89) | a networked database mode — StatefulSet, migrations, two replicas |
+| [#90](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/90) | the NetworkPolicy enforced against a CNI that means it |
+| [#92](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/92) | a pull request from a fork runs the whole pipeline |
 
-1. **[Object storage for results](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/82)**
-   — removes the only thing in the design that constrains where pods may run.
-   Until then, every shard is pinned to one node and the measured speedup is a
-   single-machine number.
-2. **[A run on a managed cluster](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/86)**
-   — turns "no provider dependency" from an argument into a result.
-3. **[A preview URL per environment](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/84)**
-   — the piece that makes these useful to people who are not running the tests.
-4. **[A preview URL per environment](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/84)**
-   — the piece that makes these useful to people who are not running the tests.
+Two remain, and both need something this repository cannot decide on its own:
 
-The rest — [weights](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/85),
-[fleet metrics](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/87),
-[reusability](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/88),
-[a networked database](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/89),
-[an enforced NetworkPolicy](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/90)
-— matter, but none of them changes what the project can do the way the first two
-do.
+1. **[A run on a managed cluster](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/86)** — turns "no provider dependency" from
+   an argument into a result, and is the only thing that would make cost in
+   node-hours mean anything. It needs a cluster somebody pays for.
+2. **[A preview URL that is actually public](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/84)** — the `Ingress` exists and
+   is proved in CI, off by default. Turning it on needs a domain and a decision
+   about who may reach it, because a preview URL is a public deployment of
+   unreviewed code.
