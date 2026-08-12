@@ -2,9 +2,12 @@
 
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) takes a pull request
 from "opened" to "environment destroyed and proven gone". It is the only
-workflow a pull request runs; the other two are
-[`fleet.yml`](../.github/workflows/fleet.yml), weekly, and
-[`publish-wiki.yml`](../.github/workflows/publish-wiki.yml), on merge.
+workflow a pull request runs. The other three never touch a pull request:
+[`fleet.yml`](../.github/workflows/fleet.yml) reads the run history weekly,
+[`prune-images.yml`](../.github/workflows/prune-images.yml) deletes published
+images the same way the pipeline deletes namespaces, and
+[`publish-wiki.yml`](../.github/workflows/publish-wiki.yml) mirrors `docs/wiki/`
+on merge.
 
 ```
         no cluster needed — all at once                  one cluster each

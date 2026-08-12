@@ -1,0 +1,144 @@
+name: Prune published images
+
+# The one thing this pipeline leaves behind.
+#
+# Every push builds five images and tags each with the commit SHA, and nothing
+# has ever removed one. That is a strange gap in a repository whose entire
+# claim is that an environment leaves nothing behind: the namespace is proved
+# gone on every run, while the artefacts the run published accumulate in the
+# registry for as long as the account exists.
+#
+# So the same rule applies to them. Keep enough history to be useful — recent
+# commits, and every commit that carries a git tag, because a release nobody
+# can pull is a release in name only — and delete the rest.
+
+on:
+  schedule:
+    # Sunday night, after the week's pull requests have landed and before the
+    # fleet report reads the history on Monday.
+    - cron: "0 3 * * 0"
+  workflow_dispatch:
+    inputs:
+      keep:
+        description: How many versions of each image to keep
+        type: number
+        default: 20
+      dry_run:
+        description: List what would be deleted, delete nothing
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  # To list and delete versions of the packages this repository publishes.
+  packages: write
+
+jobs:
+  prune:
+    name: Prune ${{ matrix.component }}
+    runs-on: ubuntu-latest
+    strategy:
+      # Not fail-fast: one image failing to prune is no reason to leave the
+      # other four unpruned.
+      fail-fast: false
+      matrix:
+        component: [auth-service, notes-service, gateway, api-tests, aggregator]
+    env:
+      KEEP: ${{ inputs.keep || 20 }}
+      # A scheduled run is the real thing; a manual run defaults to a rehearsal,
+      # because deleting a published image is not undoable and "it looked right"
+      # is a poor reason to find out.
+      DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Tags are what decides which versions are protected, and a shallow
+          # clone has none of them.
+          fetch-depth: 0
+
+      - name: Work out which commits are protected
+        run: |
+          # Every commit a git tag points at. These are pullable by definition:
+          # someone reading the repository at v1.0.0 should be able to run the
+          # images that release was tested with, however old they are.
+          #
+          # `git rev-list -n 1` rather than the tag's own object id, because an
+          # annotated tag points at a tag object and the image was tagged with
+          # the commit.
+          git tag | while read -r tag; do git rev-list -n 1 "$tag"; done \
+            | sort -u > protected.txt
+          echo "::group::$(grep -c . protected.txt || true) protected commit(s)"
+          cat protected.txt
+          echo "::endgroup::"
+
+      - name: Prune
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGE: ${{ github.event.repository.name }}/${{ matrix.component }}
+        run: |
+          set -Eeuo pipefail
+
+          # The package name in the API is path-encoded: the registry path
+          # ghcr.io/<owner>/<repo>/<component> is one package named
+          # "<repo>/<component>", and the slash has to survive the URL.
+          encoded=${PACKAGE//\//%2F}
+          owner=${{ github.repository_owner }}
+
+          # Newest first. --paginate walks every page, so a package with 500
+          # versions is not silently truncated to the first 100 — which would
+          # quietly protect the newest and delete nothing else.
+          if ! gh api --paginate \
+                "users/$owner/packages/container/$encoded/versions" \
+                > versions.json 2>api-error.txt; then
+            echo "::error::Cannot list versions of $PACKAGE."
+            echo "::error::$(cat api-error.txt)"
+            echo "If this says the token lacks permission, the package is not"
+            echo "linked to this repository and pruning needs a PAT with"
+            echo "delete:packages instead of GITHUB_TOKEN."
+            exit 1
+          fi
+
+          python3 - "$KEEP" "$DRY_RUN" <<'PY' > plan.txt
+          import json, sys, pathlib
+          keep, dry = int(sys.argv[1]), sys.argv[2] == "true"
+          protected = set(pathlib.Path("protected.txt").read_text().split())
+          versions = json.load(open("versions.json"))
+          # The API returns newest first; keep that order explicit rather than
+          # trusting it, because "newest" is the whole basis of the decision.
+          versions.sort(key=lambda v: v["created_at"], reverse=True)
+
+          delete = []
+          for i, v in enumerate(versions):
+              tags = v.get("metadata", {}).get("container", {}).get("tags", [])
+              if i < keep:
+                  continue                      # recent enough
+              if any(t in protected for t in tags):
+                  continue                      # a tagged release
+              delete.append((v["id"], ",".join(tags) or "<untagged>"))
+
+          print(f"total={len(versions)} keep_recent={keep} "
+                f"protected={len(protected)} delete={len(delete)} dry_run={dry}")
+          for vid, tags in delete:
+              print(f"{vid} {tags}")
+          PY
+
+          head -1 plan.txt
+          summary=$(head -1 plan.txt)
+          echo "### ${PACKAGE}" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`$summary\`" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "::group::Would delete"
+            tail -n +2 plan.txt
+            echo "::endgroup::"
+            echo "Dry run — nothing was deleted."
+            exit 0
+          fi
+
+          deleted=0
+          while read -r id tags; do
+            gh api -X DELETE "users/$owner/packages/container/$encoded/versions/$id"
+            echo "deleted $id ($tags)"
+            deleted=$((deleted + 1))
+          done < <(tail -n +2 plan.txt)
+          echo "Deleted $deleted version(s) of $PACKAGE." >> "$GITHUB_STEP_SUMMARY"

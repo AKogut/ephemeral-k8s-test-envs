@@ -289,6 +289,34 @@ Every object the chart creates carries
 `ephemeral-test-envs.io/env-id: <id>` precisely so that a single label selector can
 answer "what is this and who created it?" months later.
 
+## The one thing a run does leave behind
+
+Read the claim again and notice where it stops: *nothing created by that run
+remains **in the cluster***. Every push also creates five container images,
+tagged with the commit SHA, and those are not in the cluster. Nothing removed
+them, so they accumulated — a hundred versions of each image, five images, one
+per pushed commit, for as long as the account exists.
+
+That is a strange place for a project like this one to stop. The namespace is
+proved gone on every run while the artefacts the run published pile up in a
+registry nobody looks at.
+
+[`prune-images.yml`](../.github/workflows/prune-images.yml) applies the same
+standard to them, weekly:
+
+| Kept | Why |
+|---|---|
+| The 20 most recent versions of each image | Enough to redeploy any recent commit, which is what the tag is for |
+| Every version tagged with a commit a **git tag** points at | A release nobody can pull is a release in name only |
+| Nothing else | |
+
+Two details are deliberate. A manual run **defaults to a rehearsal** — it prints
+what it would delete and deletes nothing — because a deleted image version does
+not come back and "it looked right" is a poor way to find that out. And the
+listing is paginated with `--paginate`: reading only the first page would return
+the newest hundred, conclude that everything is recent, and quietly delete
+nothing at all while reporting success.
+
 ## What is deliberately not built
 
 - **A garbage-collection controller.** A CronJob that reaps old namespaces is the
