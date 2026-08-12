@@ -117,7 +117,7 @@ earns its place by recording a decision, a constraint or a trap:
 are stable; messages are not. Assert on the code so messages can be reworded.
 
 **Decisions with a real alternative get an ADR.** If someone could reasonably
-have chosen otherwise, write it down in `docs/adr/`. Nine exist; follow their
+have chosen otherwise, write it down in `docs/adr/`. Ten exist; follow their
 shape — context, decision, rationale, consequences (both directions), and the
 alternatives that were rejected.
 

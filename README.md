@@ -274,7 +274,7 @@ tests/api/          105 Playwright API tests + the shard entrypoint
 scripts/            shard planner · result merge · k8s + S3 + zip clients (210 unit tests)
                     local-demo.sh · fetch-results.sh · verify-teardown.sh
 charts/test-env/    The Helm chart — one isolated environment per release
-docs/               architecture · sharding · cost-and-cleanup · ci-pipeline · 9 ADRs
+docs/               architecture · sharding · cost-and-cleanup · ci-pipeline · 10 ADRs
 .github/workflows/  ci: check → package → 5 cluster jobs, each proving one guarantee
                     fleet: weekly, reads run history · publish-wiki: on merge
 ```
@@ -329,7 +329,7 @@ force pushes, no deletions. Board:
 | [Cost and cleanup](docs/cost-and-cleanup.md) | The three teardown layers and what each one misses |
 | [CI pipeline](docs/ci-pipeline.md) | The workflow, step by step |
 | [Local development](docs/local-development.md) | Three ways to run it; full config reference |
-| [ADRs](docs/adr/) | The nine decisions worth arguing about |
+| [ADRs](docs/adr/) | The ten decisions worth arguing about |
 
 Runbooks, an FAQ and longer-form background live in the
 [wiki](https://github.com/AKogut/ephemeral-k8s-test-envs/wiki).
@@ -367,8 +367,9 @@ overlooked:
 
 Different from the list above. Those are omissions with an argument. These were
 **limitations** — each tracked as an issue that said what broke, what "done"
-would mean, and what was undecided. Eight of the ten are now closed, and each
-one closed by making the thing true rather than by rewording the claim.
+would mean, and what was undecided. All ten are now closed: eight by making the
+thing true rather than by rewording the claim, and two — the last pair — by
+deciding, once, that this project does not buy infrastructure.
 
 | | What changed |
 |---|---|
@@ -380,13 +381,15 @@ one closed by making the thing true rather than by rewording the claim.
 | ~~[#89](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/89) No networked database~~ | `StatefulSet`, migrations that run exactly once, two replicas of each data service |
 | ~~[#90](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/90) NetworkPolicy never enforced~~ | Enforced against Calico, with a negative test and a control |
 | ~~[#92](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/92) A fork could not go green~~ | Images travel as artifacts; every check that decides anything runs on a fork |
-| [#84](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/84) No preview URL | The `Ingress` exists and is proved in CI, off by default. Open until there is a domain and a decision about who may reach it |
-| [#86](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/86) Only ever run on `kind` | "No provider dependency" is an argument, not yet a result — and cost in node-hours cannot mean anything until it is |
+| ~~[#84](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/84) No preview URL~~ | The `Ingress` ships, renders from the release name and is proved against a real controller — off by default. It has never served a person, which needs the row below |
+| ~~[#86](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/86) Only ever run on `kind`~~ | **Not done, deliberately.** Nothing here costs money to run, so "no provider dependency" stays an argument — labelled as one, with what would settle it, in [ADR 0010](docs/adr/0010-nothing-here-costs-money-to-run.md) |
 
 → [the full milestone](https://github.com/AKogut/ephemeral-k8s-test-envs/milestone/7)
 
 A limitation nobody wrote down becomes a surprise for whoever finds it. These
-were written down, and eight of them stopped being true.
+were written down; eight stopped being true, and the two that did not are
+labelled rather than quietly dropped — which is the only honest way to close a
+list like this.
 
 ## Contributing
 

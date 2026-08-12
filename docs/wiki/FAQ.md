@@ -187,7 +187,7 @@ one.
 Ten limitations of v1.0 were tracked under the
 [Beyond v1.0 milestone](https://github.com/AKogut/ephemeral-k8s-test-envs/milestone/7),
 each stating what broke, what "done" would mean, and what was still an open
-question rather than a decided plan. **Eight are closed**, and each closed by
+question rather than a decided plan. **All ten are closed.** Eight closed by
 making the thing true rather than by rewording the claim:
 
 | | |
@@ -201,12 +201,20 @@ making the thing true rather than by rewording the claim:
 | [#90](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/90) | the NetworkPolicy enforced against a CNI that means it |
 | [#92](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/92) | a pull request from a fork runs the whole pipeline |
 
-Two remain, and both need something this repository cannot decide on its own:
+The last two closed differently, and the difference is the interesting part.
+Both needed a cluster somebody pays for, so
+[ADR 0010](Design-Decisions.md) records the decision not to buy one:
 
-1. **[A run on a managed cluster](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/86)** — turns "no provider dependency" from
-   an argument into a result, and is the only thing that would make cost in
-   node-hours mean anything. It needs a cluster somebody pays for.
-2. **[A preview URL that is actually public](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/84)** — the `Ingress` exists and
-   is proved in CI, off by default. Turning it on needs a domain and a decision
-   about who may reach it, because a preview URL is a public deployment of
-   unreviewed code.
+1. **[A run on a managed cluster](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/86)** would turn "no provider dependency"
+   from an argument into a result. It is the one claim here with no test behind
+   it, and it is now labelled as such wherever it appears rather than left to
+   read like a measurement.
+2. **[A preview URL that is actually public](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/84)** — the `Ingress` ships,
+   renders from the release name, is proved against a real ingress controller
+   and dies with its namespace. What it has never done is serve a person, which
+   needs a reachable cluster and a decision about who may reach it, because a
+   preview URL is a public deployment of unreviewed code.
+
+So the honest answer to "what would you do next" is: buy a cluster, run the
+suite against it, and find out which of the two is embarrassing. Everything else
+on the list is done.

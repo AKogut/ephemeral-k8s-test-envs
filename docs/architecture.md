@@ -235,19 +235,27 @@ cold node is the difference between seconds and minutes.
 
 ## What a cloud deployment would change
 
-The design has no cloud-provider dependency, but moving off `kind` changes four
-things:
+**This table is an argument, not a test result** — nothing here has ever run on
+a managed cluster, and [ADR 0010](adr/0010-nothing-here-costs-money-to-run.md)
+says why that is deliberate. Read it as the list of things that would have to be
+checked, not as a list of things that were.
 
 | Concern | On kind | On EKS / GKE / AKS |
 |---|---|---|
 | Cluster | Created and destroyed per run | Long-lived; the *namespace* is the ephemeral unit |
-| Images | `kind load docker-image` | Pulled from a registry; needs `imagePullSecrets` or IRDS/Workload Identity |
-| Result volume | RWO local-path | RWX (EFS/Filestore) or object storage |
-| Ingress | `kubectl port-forward` | An Ingress or Gateway API route per namespace, `pr-123.preview.example.com` |
+| Images | `kind load docker-image` | Pulled from a registry; needs `imagePullSecrets` or IRSA/Workload Identity |
+| Result storage | MinIO in the namespace | A bucket, and credentials that are not generated per release |
+| Ingress | Off by default; a hostname when it is on | The same `Ingress`, plus DNS, TLS and a decision about who may reach it |
+| Storage class | `local-path`, provisioned instantly | A real class, with latency the readiness gates have never had to tolerate |
 | Cleanup | `kind delete cluster` removes everything | The namespace TTL becomes load-bearing — see [cost-and-cleanup.md](cost-and-cleanup.md) |
 
 The last row is the one that matters commercially. On a laptop, a leaked namespace
 costs nothing. On a cloud cluster it costs money every hour until someone notices.
+
+Three differences this table used to list have since been closed on `kind`
+itself: the cluster is multi-node, the NetworkPolicy is enforced against a CNI
+that means it, and the preview URL is served by a real ingress controller. What
+is left above is what a provider would genuinely add.
 
 ## Further reading
 
@@ -255,4 +263,4 @@ costs nothing. On a cloud cluster it costs money every hour until someone notice
 - [Cost and cleanup](cost-and-cleanup.md) — the teardown guarantees, stated precisely
 - [CI pipeline](ci-pipeline.md) — a step-by-step walk through the workflow
 - [Local development](local-development.md) — running everything without a cluster
-- [Architecture decisions](adr/) — the nine decisions worth arguing about
+- [Architecture decisions](adr/) — the ten decisions worth arguing about
