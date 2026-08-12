@@ -123,7 +123,7 @@ Clean up afterwards:
 ```bash
 npm --prefix scripts install
 npm run shard:plan          # prints the plan for 4 shards
-npm run test:unit           # 90 unit tests
+npm run test:unit           # 210 unit tests
 ```
 
 **Just the application**, under docker compose:
