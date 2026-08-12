@@ -44,7 +44,7 @@ and it saves you writing a branch nobody had agreed to.
 npm install              # the linter, at the root
 npm run install:all      # dependencies for all five packages
 npm run build            # compile the three services and the scripts
-npm run test:unit        # 90 unit tests, no cluster required
+npm run test:unit        # 210 unit tests, no cluster required
 ```
 
 Both installs are needed before linting: the rules are type-aware, so ESLint
