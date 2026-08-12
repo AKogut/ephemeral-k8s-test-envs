@@ -332,10 +332,32 @@ scheduling problem.
 No pull request in this repository is from a fork, so without it the artifact
 route would be exercised for the first time by a stranger's contribution.
 
+## Everything the cluster depends on is pinned
+
+```yaml
+KIND_VERSION:    v0.32.0
+KIND_NODE_IMAGE: kindest/node:v1.36.1
+```
+
+MinIO, Calico and ingress-nginx were pinned from the start, each for the same
+stated reason: a dependency that changes underneath a test turns an upstream
+release and a real regression into the same red build. The Kubernetes version
+was the one left floating — five clusters created by an action whose default
+`kind` moves on its own schedule, and a `local-demo.sh` that used whatever
+`kind` was on your machine.
+
+That is worse here than it would be elsewhere. This pipeline's subject *is*
+reproducible environments, and a local reproduction of a CI failure on a
+different Kubernetes than the one that produced it is not a reproduction. Both
+numbers are now set in one place, `scripts/local-demo.sh` pins the same node
+image, and the badge in the README states the version that actually runs rather
+than a floor nothing has ever been tested against.
+
 ## Local equivalence
 
 `./scripts/local-demo.sh` performs the same sequence against a local cluster and
-shares `verify-teardown.sh` and `fetch-results.sh` with CI. Reproducing a CI
+shares `verify-teardown.sh` and `fetch-results.sh` with CI — on the same
+Kubernetes, which is what makes the word *equivalence* honest. Reproducing a CI
 failure locally is one command, not a re-derivation of what the workflow does.
 
 ## What is not here

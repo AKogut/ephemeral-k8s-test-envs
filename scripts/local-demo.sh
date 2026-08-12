@@ -16,6 +16,11 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 CLUSTER_NAME="${CLUSTER_NAME:-ephemeral-test-envs}"
+# Pinned, and pinned to the same image CI uses. Unpinned, the Kubernetes
+# version is whatever the kind binary on this machine defaults to, which
+# means a local reproduction of a CI failure can be a reproduction on a
+# different Kubernetes — the one thing this project should not get wrong.
+KIND_NODE_IMAGE="${KIND_NODE_IMAGE:-kindest/node:v1.36.1}"
 NAMESPACE="${NAMESPACE:-demo-local}"
 RELEASE="${RELEASE:-demo}"
 IMAGE_TAG="${IMAGE_TAG:-local}"
@@ -128,7 +133,7 @@ step "Creating kind cluster '$CLUSTER_NAME'"
 if kind get clusters 2>/dev/null | grep -qx "$CLUSTER_NAME"; then
   info "cluster already exists, reusing it"
 else
-  kind create cluster --name "$CLUSTER_NAME" --wait 120s
+  kind create cluster --name "$CLUSTER_NAME" --image "$KIND_NODE_IMAGE" --wait 120s
 fi
 kubectl cluster-info --context "kind-$CLUSTER_NAME" >/dev/null
 ok "cluster ready"
