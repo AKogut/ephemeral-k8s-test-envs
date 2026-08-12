@@ -298,6 +298,19 @@ requests that deserve the most scrutiny. The registry is a convenience for
 moving five tarballs from one job to the next. Nothing about *testing* the
 change needs it.
 
+### Which checks gate a merge
+
+All twenty-three jobs are required by the `main` ruleset. Every one of them runs
+unconditionally — no job in this workflow carries an `if:` — so a required check
+here cannot be satisfied by a job that was skipped.
+
+The one status check deliberately **not** required is `Trivy`, the code-scanning
+result. It is not a job; it is GitHub reporting on a SARIF upload, and a fork
+cannot upload one. Requiring it would block every fork pull request on a check
+that can never report — while gating nothing, because the vulnerability *gate*
+is a step inside each image job and is already required with it. The scan
+findings are the trend line; the failure condition is the job.
+
 All five cluster jobs get their images through one composite action,
 [`.github/actions/load-images`](../.github/actions/load-images/action.yml), which
 takes either route and then asserts that all five references are in every node's

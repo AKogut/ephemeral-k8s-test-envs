@@ -30,7 +30,8 @@ NetworkPolicy, the sharded suite, the teardown proof — runs and is enforced.
 Two things are still worth knowing before you start:
 
 - **Merging needs write access.** The `main` ruleset requires a pull request,
-  linear history and 13 passing checks, with no bypass actors. An outside
+  squash merges only, linear history, every review thread resolved, and 23
+  passing checks — every job in the workflow — with no bypass actors. An outside
   contributor cannot merge their own work here even after approval.
 - **The summary comment will not appear on your pull request.** Posting a comment
   is a write too. The identical report is in the run's job summary.
