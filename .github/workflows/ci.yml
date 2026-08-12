@@ -72,7 +72,7 @@ env:
   # one that produced it. Both are pinned to the same pair, and
   # scripts/local-demo.sh pins the same node image.
   KIND_VERSION: v0.32.0
-  KIND_NODE_IMAGE: kindest/node:v1.36.1
+  KIND_NODE_IMAGE: kindest/node:v1.35.0
 
 jobs:
   chart:

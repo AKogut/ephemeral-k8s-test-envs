@@ -20,7 +20,7 @@ CLUSTER_NAME="${CLUSTER_NAME:-ephemeral-test-envs}"
 # version is whatever the kind binary on this machine defaults to, which
 # means a local reproduction of a CI failure can be a reproduction on a
 # different Kubernetes — the one thing this project should not get wrong.
-KIND_NODE_IMAGE="${KIND_NODE_IMAGE:-kindest/node:v1.36.1}"
+KIND_NODE_IMAGE="${KIND_NODE_IMAGE:-kindest/node:v1.35.0}"
 NAMESPACE="${NAMESPACE:-demo-local}"
 RELEASE="${RELEASE:-demo}"
 IMAGE_TAG="${IMAGE_TAG:-local}"

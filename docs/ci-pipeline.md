@@ -336,7 +336,7 @@ route would be exercised for the first time by a stranger's contribution.
 
 ```yaml
 KIND_VERSION:    v0.32.0
-KIND_NODE_IMAGE: kindest/node:v1.36.1
+KIND_NODE_IMAGE: kindest/node:v1.35.0
 ```
 
 MinIO, Calico and ingress-nginx were pinned from the start, each for the same
@@ -352,6 +352,19 @@ different Kubernetes than the one that produced it is not a reproduction. Both
 numbers are now set in one place, `scripts/local-demo.sh` pins the same node
 image, and the badge in the README states the version that actually runs rather
 than a floor nothing has ever been tested against.
+
+**The pin earned itself immediately.** The first attempt set it to v1.36.1, the
+version this laptop's `kind` defaults to, and the self-destruct job went red:
+its pod cannot reach the API server's ClusterIP within its retry budget on that
+version — `UND_ERR_CONNECT_TIMEOUT` to `10.96.0.1:443`, reproduced locally and
+in CI, with v1.35.0 green as the control. So the pin is v1.35.0 and the
+incompatibility is [issue #120](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/120)
+rather than a surprise.
+
+That is the argument for pinning, in one paragraph: the breakage exists either
+way. Pinned, it arrives in a pull request that names the version it came with.
+Floating, it arrives on an unrelated Tuesday, in a job nobody changed, when the
+action bumps its default.
 
 ## Local equivalence
 
