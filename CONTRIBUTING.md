@@ -1,7 +1,9 @@
 # Contributing
 
 This is a portfolio project, but it is set up the way a working repository should
-be, and pull requests are welcome.
+be, and pull requests are welcome. Participating means following the
+[Code of Conduct](CODE_OF_CONDUCT.md), which is one screen long and amounts to
+arguing with the code rather than with the person who wrote it.
 
 ## Before you spend time on a pull request
 
