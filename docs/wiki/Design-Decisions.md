@@ -13,7 +13,10 @@ Without these, a deliberate trade-off is indistinguishable from an oversight.
 | [0003](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/docs/adr/0003-shared-secret-jwt.md) | Shared-secret HS256 rather than JWKS | `notes-service` holds a key that can mint tokens |
 | [0004](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/docs/adr/0004-aggregate-in-cluster-render-in-ci.md) | Merge in the cluster, render the HTML in CI | `helm install` alone does not produce browsable HTML |
 | [0005](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/docs/adr/0005-test-tuned-kdf-cost.md) | The scrypt cost is lowered in ephemeral environments | A production deployment that forgets to raise it would be materially weaker |
-| [0006](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/docs/adr/0006-single-replica-data-services.md) | Data services run one replica; only the gateway scales | The project does not demonstrate a horizontally scaled stateful service |
+| [0006](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/docs/adr/0006-single-replica-data-services.md) | Data services run one replica; only the gateway scales | True of the default; `database.backend=postgres` lifts it |
+| [0007](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/docs/adr/0007-object-storage-for-shard-results.md) | Shard results go to object storage, not a shared volume | An environment runs a fourth workload, and SigV4 is this repository's code |
+| [0008](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/docs/adr/0008-networked-database-mode.md) | A Postgres mode beside SQLite, selected by name | Two store implementations that can drift; CI runs the suite against both |
+| [0009](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/docs/adr/0009-reference-implementation-not-a-platform.md) | A reference implementation, not a package | Adopting the pattern means copying and adapting, with no upgrade path |
 
 ## The shape used
 

@@ -207,6 +207,24 @@ different repository, it needs to be linked manually.
 
 ## Finding leaked environments
 
+**In CI there are none to find**, and that is worth understanding before
+searching: every environment lives inside a kind cluster that is destroyed with
+the job, so a namespace cannot outlive its run. The question only has an answer
+on a long-lived cluster — the cloud case, and the reason `#86` matters.
+
+What *is* worth checking on a schedule is whether the guarantee held over time,
+which no single run can say:
+
+```bash
+npm run fleet -- --runs 20
+```
+
+It reads the pipeline's own history and goes red on a **broken guarantee** — an
+environment never proved gone, a self-destruct that failed — rather than on a
+run that was merely slower. The same report runs weekly on its own.
+
+On a cluster where environments can accumulate:
+
 ```bash
 kubectl get ns -l app.kubernetes.io/part-of=ephemeral-test-env
 
