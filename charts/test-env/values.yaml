@@ -160,7 +160,7 @@ database:
       repository: postgres
       # Pinned: a database that changes under the suite would make an upstream
       # release and a real regression look identical.
-      tag: 17.6-alpine
+      tag: 17.11-alpine
       # Its own policy, not image.pullPolicy. That one is about this project's
       # five images, which CI side-loads into the cluster and therefore sets to
       # Never; an upstream image has to be pulled, and inheriting Never gives
