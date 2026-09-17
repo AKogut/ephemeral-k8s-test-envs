@@ -28,6 +28,14 @@ function params(costLog2: number): { N: number; r: number; p: number; maxmem: nu
   return { N, r, p, maxmem: 256 * N * r * 2 };
 }
 
+const HASH_PREFIX = 'scrypt$';
+
+function parseHash(hash: string, fallbackCostLog2: number): { costLog2: number; digest: string } {
+  if (!hash.startsWith(HASH_PREFIX)) return { costLog2: fallbackCostLog2, digest: hash };
+  const [cost, digest = ''] = hash.slice(HASH_PREFIX.length).split('$');
+  return { costLog2: Number.parseInt(cost ?? '', 10), digest };
+}
+
 export interface PasswordHash {
   hash: string;
   salt: string;
@@ -36,7 +44,10 @@ export interface PasswordHash {
 export async function hashPassword(password: string, costLog2: number): Promise<PasswordHash> {
   const salt = randomBytes(SALT_LENGTH);
   const derived = await scryptAsync(password, salt, KEY_LENGTH, params(costLog2));
-  return { hash: derived.toString('base64'), salt: salt.toString('base64') };
+  return {
+    hash: `${HASH_PREFIX}${costLog2}$${derived.toString('base64')}`,
+    salt: salt.toString('base64'),
+  };
 }
 
 export async function verifyPassword(
@@ -44,9 +55,10 @@ export async function verifyPassword(
   stored: PasswordHash,
   costLog2: number,
 ): Promise<boolean> {
+  const { costLog2: storedCostLog2, digest } = parseHash(stored.hash, costLog2);
   const salt = Buffer.from(stored.salt, 'base64');
-  const expected = Buffer.from(stored.hash, 'base64');
-  const derived = await scryptAsync(password, salt, expected.length, params(costLog2));
+  const expected = Buffer.from(digest, 'base64');
+  const derived = await scryptAsync(password, salt, expected.length, params(storedCostLog2));
   // Lengths always match here, but timingSafeEqual throws if they ever do not.
   if (derived.length !== expected.length) return false;
   return timingSafeEqual(derived, expected);

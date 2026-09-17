@@ -37,6 +37,7 @@ jobs:
   report:
     name: What the run history says
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 

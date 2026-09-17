@@ -14,10 +14,11 @@ test.describe('Resilience and error handling', () => {
 
   test('rejects an over-sized payload with 413', async ({ authed }) => {
     const response = await authed.post('/notes', {
-      data: { title: 'Huge', body: 'x'.repeat(400_000) },
+      data: { title: 'Huge', padding: 'x'.repeat(400_000) },
     });
 
-    expect([400, 413]).toContain(response.status());
+    expect(response.status()).toBe(413);
+    expect((await response.json()).error.code).toBe('PAYLOAD_TOO_LARGE');
   });
 
   test('returns a consistent error envelope for every failure mode', async ({ api, authed }) => {
@@ -47,7 +48,9 @@ test.describe('Resilience and error handling', () => {
 
   test('rejects an unsupported method on a known path', async ({ authed }) => {
     const response = await authed.fetch('/notes', { method: 'TRACE' });
-    expect(response.status()).toBeGreaterThanOrEqual(400);
+
+    expect(response.status()).toBe(405);
+    expect((await response.json()).error.code).toBe('METHOD_NOT_ALLOWED');
   });
 
   test('handles concurrent writes from one user without losing any', async ({ authed }) => {
@@ -72,7 +75,32 @@ test.describe('Resilience and error handling', () => {
     ]);
 
     for (const response of results) expect(response.status()).toBe(200);
-    expect((await (await authed.get(`/notes/${note.id}`)).json()).id).toBe(note.id);
+    const final = await (await authed.get(`/notes/${note.id}`)).json();
+    expect(final.id).toBe(note.id);
+    expect(final.title).toBe('write-a');
+    expect(final.body).toBe('write-b');
+  });
+
+  test('a note deleted during concurrent writes is reported as gone, never as an empty success', async ({ authed }) => {
+    const note = await createNote(authed, { title: 'Doomed' });
+
+    const [deletes, patches] = await Promise.all([
+      Promise.all(Array.from({ length: 3 }, () => authed.delete(`/notes/${note.id}`))),
+      Promise.all(
+        Array.from({ length: 3 }, (_unused, i) =>
+          authed.patch(`/notes/${note.id}`, { data: { title: `racing ${i}` } }),
+        ),
+      ),
+    ]);
+
+    expect(deletes.map((response) => response.status()).sort()).toEqual([204, 404, 404]);
+    for (const response of patches) {
+      expect([200, 404]).toContain(response.status());
+      const body = await response.json();
+      if (response.status() === 200) expect(body.id).toBe(note.id);
+      else expect(body.error.code).toBe('NOT_FOUND');
+    }
+    expect((await authed.get(`/notes/${note.id}`)).status()).toBe(404);
   });
 
   test('does not hang when a request carries an unexpected content type', async ({ authed }) => {
@@ -83,5 +111,35 @@ test.describe('Resilience and error handling', () => {
 
     expect(response.status()).toBeGreaterThanOrEqual(400);
     expect(response.status()).toBeLessThan(500);
+  });
+
+  test('rejects a body in an unsupported charset with a structured 415', async ({ api, authed }) => {
+    const responses = [
+      await api.post('/auth/register', {
+        headers: { 'content-type': 'application/json; charset=ebcdic' },
+        data: '{}',
+      }),
+      await authed.post('/notes', {
+        headers: { 'content-type': 'application/json; charset=ebcdic' },
+        data: '{}',
+      }),
+    ];
+
+    for (const response of responses) {
+      expect(response.status()).toBe(415);
+      expect(response.headers()['content-type']).toContain('application/json');
+      expect((await response.json()).error.code).toBe('UNSUPPORTED_MEDIA_TYPE');
+    }
+  });
+
+  test('rejects a body in an unsupported content encoding with a structured 415', async ({ authed }) => {
+    const response = await authed.post('/notes', {
+      headers: { 'content-type': 'application/json', 'content-encoding': 'x-unknown' },
+      data: '{"title":"encoded"}',
+    });
+
+    expect(response.status()).toBe(415);
+    expect(response.headers()['content-type']).toContain('application/json');
+    expect((await response.json()).error.code).toBe('UNSUPPORTED_MEDIA_TYPE');
   });
 });

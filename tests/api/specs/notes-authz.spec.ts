@@ -1,4 +1,21 @@
+import { createHmac } from 'node:crypto';
 import { createNote, expect, test } from '../fixtures/api.js';
+
+function signToken(claims: Record<string, unknown>, secret = process.env.JWT_SECRET ?? ''): string {
+  const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
+  const now = Math.floor(Date.now() / 1000);
+  const payload = encode({
+    sub: '11111111-1111-1111-1111-111111111111',
+    email: 'forged@example.test',
+    iss: process.env.JWT_ISSUER ?? 'ephemeral-test-envs/auth-service',
+    aud: process.env.JWT_AUDIENCE ?? 'ephemeral-test-envs',
+    iat: now,
+    exp: now + 3600,
+    ...claims,
+  });
+  const unsigned = `${encode({ alg: 'HS256', typ: 'JWT' })}.${payload}`;
+  return `${unsigned}.${createHmac('sha256', secret).update(unsigned).digest('base64url')}`;
+}
 
 test.describe('Notes authorization and tenant isolation', () => {
   test('rejects an unauthenticated list request', async ({ api }) => {
@@ -71,23 +88,35 @@ test.describe('Notes authorization and tenant isolation', () => {
     expect(tags).not.toContain('only-theirs');
   });
 
-  test('does not accept a token signed for a different audience', async ({ api }) => {
-    // A well-formed HS256 JWT signed with a secret this environment does not use.
-    const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
-    const payload = Buffer.from(
-      JSON.stringify({
-        sub: '11111111-1111-1111-1111-111111111111',
-        email: 'forged@example.test',
-        iss: 'some-other-issuer',
-        aud: 'some-other-audience',
-        exp: Math.floor(Date.now() / 1000) + 3600,
-      }),
-    ).toString('base64url');
-
+  test('rejects a well-formed token that this environment did not sign', async ({ api }) => {
     const response = await api.get('/notes', {
-      headers: { authorization: `Bearer ${header}.${payload}.ZmFrZS1zaWduYXR1cmU` },
+      headers: { authorization: `Bearer ${signToken({}, 'a-secret-this-environment-does-not-use')}` },
     });
 
     expect(response.status()).toBe(401);
+    expect((await response.json()).error.code).toBe('TOKEN_INVALID');
   });
+
+  for (const [claim, value] of [
+    ['aud', 'some-other-audience'],
+    ['iss', 'some-other-issuer'],
+  ] as const) {
+    test(`rejects a correctly signed token with the wrong ${claim}`, async ({ api, user }) => {
+      test.skip(!process.env.JWT_SECRET, 'JWT_SECRET is not available to this run');
+
+      const valid = await api.get('/notes', {
+        headers: { authorization: `Bearer ${signToken({ sub: user.id, email: user.email })}` },
+      });
+      expect(valid.status()).toBe(200);
+
+      const response = await api.get('/notes', {
+        headers: {
+          authorization: `Bearer ${signToken({ sub: user.id, email: user.email, [claim]: value })}`,
+        },
+      });
+
+      expect(response.status()).toBe(401);
+      expect((await response.json()).error.code).toBe('TOKEN_INVALID');
+    });
+  }
 });
