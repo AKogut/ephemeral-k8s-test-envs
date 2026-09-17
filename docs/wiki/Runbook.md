@@ -167,6 +167,16 @@ kind delete cluster --name ephemeral-test-envs
 
 That is the script doing its job. Read which check failed:
 
+- **`Teardown not verified: the cluster could not be asked.`** Nothing was
+  checked. The API server did not answer, or refused the credentials, so the
+  script cannot tell a deleted namespace from an unreachable one and will not
+  report either as gone. Check the context and that the cluster is up:
+
+  ```bash
+  kubectl config current-context
+  kubectl get --raw /version
+  ```
+
 - **Cluster-scoped RBAC survived.** The self-destruct `ClusterRole` and
   `ClusterRoleBinding` are *not* namespaced, so deleting the namespace does not
   remove them. `helm uninstall` should — if it was skipped, or the release record

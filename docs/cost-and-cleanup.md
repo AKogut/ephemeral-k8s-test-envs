@@ -58,7 +58,7 @@ The primary mechanism, and the one that runs in the normal case:
 
 ```yaml
 - name: Tear down the environment
-  if: always() && !inputs.keep_environment
+  if: always()
   run: |
     helm uninstall "$release" -n "$ns" --wait --timeout 3m || true
     kubectl delete namespace "$ns" --wait=true --timeout=5m || true
