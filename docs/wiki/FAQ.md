@@ -170,7 +170,10 @@ See [ADR 0005](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/docs/
 
 ## How would this change on EKS or GKE?
 
-The design has no provider dependency, but four things move:
+Nothing in the code or the chart calls a provider API, so the argument is that
+the design has no provider dependency. It is an argument, not a result: it has
+never been run on a managed cluster, for the reason given
+[below](#what-would-you-do-next). What it predicts is that four things move:
 
 | | kind | Cloud |
 |---|---|---|
@@ -203,7 +206,7 @@ making the thing true rather than by rewording the claim:
 
 The last two closed differently, and the difference is the interesting part.
 Both needed a cluster somebody pays for, so
-[ADR 0010](Design-Decisions.md) records the decision not to buy one:
+[ADR 0010](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/docs/adr/0010-nothing-here-costs-money-to-run.md) records the decision not to buy one:
 
 1. **[A run on a managed cluster](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/86)** would turn "no provider dependency"
    from an argument into a result. It is the one claim here with no test behind

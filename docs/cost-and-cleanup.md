@@ -10,8 +10,9 @@ every cluster. This document states exactly what guarantees exist, what they do
 > After a run finishes — for any reason, including failure and cancellation —
 > nothing created by that run remains in the cluster.
 
-Every word of that is tested. The last step of a CI run is not "deploy succeeded",
-it is `verify-teardown.sh` asserting the namespace is gone.
+Every word of that is tested. A CI run is not judged by "deploy succeeded": after
+the environment is torn down, `verify-teardown.sh` asserts the namespace is gone,
+and the run cannot pass until it has.
 
 ## Three independent layers
 
@@ -22,7 +23,7 @@ what the previous one misses.
 flowchart TD
     RUN[Test run finishes] --> L1
 
-    L1["Layer 1 — ttlSecondsAfterFinished<br/>on every Job<br/><i>Kubernetes removes finished pods</i>"]
+    L1["Layer 1 — ttlSecondsAfterFinished<br/>on the test, aggregator and teardown Jobs<br/><i>Kubernetes removes finished pods</i>"]
     L2["Layer 2 — helm uninstall + kubectl delete namespace<br/>in an <code>if: always()</code> CI step<br/><i>removes the environment</i>"]
     L3["Layer 3 — self-destruct Job<br/>deletes its own namespace after a TTL<br/><i>runs even if CI never does</i>"]
     V["verify-teardown.sh<br/><i>asserts nothing remains — fails the build if it does</i>"]
@@ -33,7 +34,9 @@ flowchart TD
 
 ### Layer 1 — `ttlSecondsAfterFinished`
 
-Every Job in the chart sets it (900s by default, 600s in CI):
+The shard and aggregator Jobs set it (900s by default, 600s in CI), and the
+self-destruct Job sets 300s. The Postgres migration Jobs do not, and are removed
+with the namespace like everything else:
 
 ```yaml
 ttlSecondsAfterFinished: {{ .Values.tests.ttlSecondsAfterFinished }}
@@ -44,7 +47,8 @@ The TTL controller deletes the Job and its pods once they finish. `activeDeadlin
 covers the opposite case: a suite that hangs is killed rather than holding the
 namespace open indefinitely.
 
-**What this does not cover:** the Deployments, the Service, the PVC, the namespace.
+**What this does not cover:** the Deployments, the Services, MinIO, the Postgres
+StatefulSet and its volume claim when that backend is on, the namespace.
 A TTL on Jobs is pod hygiene, not environment cleanup. Relying on it alone is the
 most common way a "self-cleaning" setup quietly leaks.
 
@@ -190,8 +194,8 @@ on because CI environments are unattended by definition.
 ## Proving it, rather than claiming it
 
 Cleanup that is asserted in a README is cleanup nobody has verified.
-[`verify-teardown.sh`](../scripts/verify-teardown.sh) runs as the final CI step and
-checks four things — three of which survive a namespace deletion:
+[`verify-teardown.sh`](../scripts/verify-teardown.sh) runs after every teardown in
+CI, in an `if: always()` step, and checks four things — three of which survive a namespace deletion:
 
 | Check | Why it is not redundant |
 |---|---|
@@ -269,25 +273,28 @@ If an environment is left behind — teardown disabled for debugging, a bug in t
 chart, a cluster outage during cleanup:
 
 ```bash
-# What is out there?
-kubectl get ns -l app.kubernetes.io/part-of=ephemeral-test-env
+# What is out there? Every environment is a Helm release in its own namespace
+helm list -A
 
 # Everything belonging to one environment
-kubectl get all -n pr-123 -l app.kubernetes.io/instance=pr-123
+kubectl get all -n pr-123
 
 # Remove one
 helm uninstall pr-123 -n pr-123 && kubectl delete namespace pr-123
 ./scripts/verify-teardown.sh --namespace pr-123 --release pr-123
 
-# Remove every environment older than a day (dry run first)
-kubectl get ns -l app.kubernetes.io/part-of=ephemeral-test-env \
-  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.creationTimestamp}{"\n"}{end}'
+# How old is each one? CI names them pr-<number>, or run-<id> without a pull request
+kubectl get ns -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.creationTimestamp}{"\n"}{end}' \
+  | grep -E '^(pr|run)-'
 ```
 
 Every object the chart creates carries
 `app.kubernetes.io/part-of: ephemeral-test-env` and
 `ephemeral-test-envs.io/env-id: <id>` precisely so that a single label selector can
-answer "what is this and who created it?" months later.
+answer "what is this and who created it?" months later. The namespace is the
+exception: Helm creates it with `--create-namespace`, which labels it with its own
+name and nothing else, so a selector on the chart's labels finds no namespaces at
+all. They are found by name, or through the release list.
 
 ## The one thing a run does leave behind
 
