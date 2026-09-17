@@ -10,7 +10,8 @@ Three ways to run this, from fastest feedback to closest to production.
 
 ## Prerequisites
 
-- Node 22+ (`node --version`)
+- Node 22+ with `npm` (`node --version`), for all three, including the demo,
+  which builds the results tooling to copy the report out
 - Docker (for 2 and 3)
 - `kind`, `kubectl`, `helm` (for 3)
 

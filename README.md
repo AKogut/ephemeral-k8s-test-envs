@@ -43,7 +43,7 @@ cd ephemeral-k8s-test-envs
 
 A `kind` cluster, five images, a namespace, 105 tests across 4 parallel pods, an
 aggregated report, and a verified teardown. **No cloud account, roughly three
-minutes.** Needs `docker`, `kind`, `kubectl` and `helm`.
+minutes.** Needs `docker`, `kind`, `kubectl`, `helm` and Node 22 with `npm`.
 
 ## What actually happens
 
@@ -173,7 +173,7 @@ rules:
 ```
 
 Then `verify-teardown.sh` checks four things and **fails the build** if any
-survive — including the three that a namespace deletion does *not* clean up:
+survive, or if it cannot get an answer from the cluster to check them against — including the three that a namespace deletion does *not* clean up:
 cluster-scoped RBAC, released PersistentVolumes, and the Helm release record.
 Those are exactly how a cluster fills with junk while everyone believes cleanup
 is working.

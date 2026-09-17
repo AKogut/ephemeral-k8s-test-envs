@@ -55,7 +55,7 @@ builds a TypeScript program per package and a missing `node_modules` turns every
 import into `any` — which makes the interesting rules pass silently.
 
 For a full run against a real cluster you also need `docker`, `kind`, `kubectl`
-and `helm`:
+and `helm`, alongside the Node 22 and `npm` you already have:
 
 ```bash
 ./scripts/local-demo.sh
