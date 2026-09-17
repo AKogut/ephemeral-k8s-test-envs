@@ -17,7 +17,7 @@
   "devDependencies": {
     "@playwright/test": "^1.56.0",
     "@types/node": "^22.18.8",
-    "allure-playwright": "^3.4.2",
+    "allure-playwright": "^3.11.0",
     "typescript": "^5.9.3"
   }
 }
