@@ -59,8 +59,9 @@ action, an Allure server — without the cluster having an opinion.
 - The aggregator image stays minimal and dependency-free.
 - The pass/fail verdict is visible in `kubectl logs` with no tooling.
 - Report publishing is swappable without touching the chart.
-- The same aggregator binary also hosts `wait-for-jobs` and `self-destruct`, so an
-  environment needs four images, not five.
+- The same aggregator binary also hosts `wait-for-jobs` and `self-destruct`, so
+  neither needs an image of its own: an environment runs on the five this
+  repository builds, not seven.
 
 **Bad**
 

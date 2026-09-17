@@ -43,8 +43,10 @@ These are defaults worth copying:
 - **No service account token in application pods.** A proxy and two CRUD services
   have no business holding a cluster credential.
 - **Least-privilege RBAC** for the two workloads that do use the API: the
-  aggregator may `get` exactly one named Job; the teardown Job may `delete`
-  exactly one namespace, pinned with `resourceNames`.
+  aggregator may `get` exactly one named Job; the teardown Job may `get` and
+  `delete` exactly one namespace, and `patch` its own ClusterRole and
+  ClusterRoleBinding so they are garbage-collected with that namespace — every
+  rule pinned with `resourceNames`.
 - **Secrets are never passed on a command line.** The chart generates a signing
   key per release and preserves it across upgrades; `jwt.existingSecret` is there
   for anyone supplying their own.
@@ -88,9 +90,11 @@ inside the container would find.
 
 ## Application-level behaviour the suite locks in
 
-- Registration and login return **identical responses** for "no such user" and
-  "wrong password", and login hashes a dummy password on the unknown-user path so
-  the timing matches.
+- Login returns an **identical response** for "no such user" and "wrong
+  password", and hashes a dummy password on the unknown-user path so the timing
+  matches. Registration does not extend the same courtesy: an email that is
+  already taken is `409 EMAIL_ALREADY_REGISTERED`, which is the trade every
+  sign-up form makes to tell a user why it refused them.
 - Another user's note is **404, not 403** — 403 would confirm the id exists and
   turn the API into an id oracle.
 - JWTs are checked for **issuer and audience**, not only signature, and the

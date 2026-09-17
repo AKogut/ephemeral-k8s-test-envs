@@ -42,7 +42,7 @@ The full 105-test suite takes about a second this way. Useful subsets:
 
 ```bash
 npx playwright test specs/notes-crud.spec.ts     # one file
-npx playwright test -g "cross-user"              # by name
+npx playwright test -g "another user"            # by name
 npx playwright test --ui                         # interactive
 ```
 
@@ -170,9 +170,13 @@ The plan is pure logic and needs no cluster:
 ```bash
 npm run shard:plan                       # the plan for 4 shards
 npm --prefix scripts test                # 210 unit tests
-npm --prefix scripts run shard -- --dir tests/api/specs --total 8 --format plan
-npm --prefix scripts run shard -- --index 2 --total 4 --format json | jq
+npm --prefix scripts run shard -- --dir ../tests/api/specs --total 8 --format plan
+npm --prefix scripts run --silent shard -- --dir ../tests/api/specs --index 2 --total 4 --format json | jq
 ```
+
+npm runs the script from `scripts/`, so `--dir` is relative to that, and the
+weights are found beside it at `<dir>/../test-weights.json`. `--silent` keeps
+npm's own banner out of the JSON.
 
 Rehearse a sharded run without Kubernetes — four processes writing to the same
 layout the pods use:
@@ -210,32 +214,53 @@ helm template t charts/test-env --set notes.authMode=nope   # rejected
 | Variable | Default | Notes |
 |---|---|---|
 | `PORT` | `3001` | |
-| `DATABASE_PATH` | `:memory:` | Chart sets `/data/auth.sqlite` |
+| `ENV_ID` | `local` | Echoed on `x-env-id`; the chart sets the namespace |
+| `DB_BACKEND` | `sqlite` | `sqlite` or `postgres`; anything else refuses to boot |
+| `DATABASE_PATH` | `:memory:` | SQLite only. Chart sets `/data/auth.sqlite` |
+| `DATABASE_URL` | — | Postgres only, and **required** when `DB_BACKEND=postgres` |
+| `DB_POOL_SIZE` | `10` | Postgres only |
+| `DB_CONNECT_TIMEOUT_MS` | `5000` | Postgres only |
 | `JWT_SECRET` | dev default | **Required** when `NODE_ENV=production` |
 | `JWT_ISSUER` / `JWT_AUDIENCE` | `ephemeral-test-envs/…` | Must match notes-service |
 | `JWT_TTL_SECONDS` | `3600` | |
 | `SCRYPT_COST_LOG2` | `14` | 12 in test environments — [ADR 0005](adr/0005-test-tuned-kdf-cost.md) |
 | `LOG_LEVEL` | `info` | |
+| `SHUTDOWN_GRACE_MS` | `10000` | How long in-flight requests get after `SIGTERM` |
 
 ### notes-service
 
 | Variable | Default | Notes |
 |---|---|---|
 | `PORT` | `3002` | |
-| `DATABASE_PATH` | `:memory:` | Chart sets `/data/notes.sqlite` |
+| `ENV_ID` | `local` | |
+| `DB_BACKEND` | `sqlite` | As for auth-service |
+| `DATABASE_PATH` | `:memory:` | SQLite only. Chart sets `/data/notes.sqlite` |
+| `DATABASE_URL` | — | Postgres only, and **required** when `DB_BACKEND=postgres` |
+| `DB_POOL_SIZE` | `10` | Postgres only |
+| `DB_CONNECT_TIMEOUT_MS` | `5000` | Postgres only |
+| `JWT_SECRET` | dev default | **Required** when `NODE_ENV=production` |
+| `JWT_ISSUER` / `JWT_AUDIENCE` | `ephemeral-test-envs/…` | Must match auth-service |
 | `AUTH_MODE` | `jwt-only` | Chart sets `verify-with-auth-service` |
 | `AUTH_SERVICE_URL` | `http://localhost:3001` | |
+| `AUTH_VERIFY_TIMEOUT_MS` | `2000` | Per call to auth-service in `verify-with-auth-service` mode |
 | `AUTH_CACHE_TTL_MS` | `5000` | Positive-verification cache |
 | `MAX_PAGE_SIZE` | `100` | |
+| `LOG_LEVEL` | `info` | |
+| `SHUTDOWN_GRACE_MS` | `10000` | |
 
 ### gateway
 
-| Variable | Default |
-|---|---|
-| `PORT` | `3000` |
-| `AUTH_SERVICE_URL` | `http://localhost:3001` |
-| `NOTES_SERVICE_URL` | `http://localhost:3002` |
-| `PROXY_TIMEOUT_MS` | `10000` |
+| Variable | Default | Notes |
+|---|---|---|
+| `PORT` | `3000` | |
+| `ENV_ID` | `local` | |
+| `AUTH_SERVICE_URL` | `http://localhost:3001` | |
+| `NOTES_SERVICE_URL` | `http://localhost:3002` | |
+| `PROXY_TIMEOUT_MS` | `10000` | Per proxied request |
+| `READINESS_TIMEOUT_MS` | `2000` | Per upstream probe behind `/readyz` |
+| `MAX_BODY_BYTES` | `524288` | 512 KiB |
+| `LOG_LEVEL` | `info` | |
+| `SHUTDOWN_GRACE_MS` | `10000` | |
 
 ### Test runner
 
@@ -245,9 +270,16 @@ helm template t charts/test-env --set notes.authMode=nope   # rejected
 | `AUTH_URL` / `NOTES_URL` | localhost | For the direct-to-service health specs |
 | `SHARD_INDEX` | `JOB_COMPLETION_INDEX`, else `0` | |
 | `SHARD_TOTAL` | `1` | |
-| `RESULTS_DIR` | `./results` | |
+| `RESULTS_DIR` | `<repo root>/results` | Resolved from `run-shard.mjs`, not the working directory |
+| `READY_TIMEOUT_MS` | `120000` | How long the runner waits for `/readyz` before failing the shard |
+| `READY_INTERVAL_MS` | `2000` | Between those attempts |
+| `ENV_ID` | `local` | Recorded in the Allure environment |
 | `PW_WORKERS` | `2` | Processes *inside* one shard |
 | `PW_RETRIES` | `1` | |
+| `PW_TEST_TIMEOUT_MS` | `30000` | Per test |
+| `PW_EXPECT_TIMEOUT_MS` | `5000` | Per assertion |
+| `PW_GLOBAL_TIMEOUT_MS` | `600000` | The whole shard |
+| `RESULTS_S3_ENDPOINT`, `_BUCKET`, `_ACCESS_KEY_ID`, `_SECRET_ACCESS_KEY` | unset | All four set, and the shard uploads its results; any missing, and it does not |
 
 ## Troubleshooting
 
