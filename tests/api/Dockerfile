@@ -75,7 +75,7 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack 
 
 # The results volume is mounted here; owning it up front means the container
 # works as a non-root user against a fresh PersistentVolume.
-RUN mkdir -p /results && chown -R node:node /results /app
+RUN mkdir -p /results && chown node:node /results /app
 
 USER node
 

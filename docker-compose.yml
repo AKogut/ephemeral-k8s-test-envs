@@ -104,6 +104,9 @@ services:
       SHARD_INDEX: "0"
       SHARD_TOTAL: "1"
       ENV_ID: docker-compose
+      JWT_SECRET: ${JWT_SECRET:-local-compose-secret}
+      JWT_ISSUER: ephemeral-test-envs/auth-service
+      JWT_AUDIENCE: ephemeral-test-envs
     depends_on:
       gateway:
         condition: service_healthy

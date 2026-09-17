@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { test as base, request, type APIRequestContext } from '@playwright/test';
+import { test as base, type APIRequestContext } from '@playwright/test';
 
 /**
  * Fixtures for the API suite.
@@ -78,8 +78,11 @@ async function registerAndLogin(api: APIRequestContext, prefix: string): Promise
 }
 
 export const test = base.extend<ApiFixtures>({
-  api: async ({ playwright }, use) => {
-    const context = await playwright.request.newContext({ baseURL: baseUrls().gateway });
+  api: async ({ playwright, extraHTTPHeaders }, use) => {
+    const context = await playwright.request.newContext({
+      baseURL: baseUrls().gateway,
+      extraHTTPHeaders,
+    });
     await use(context);
     await context.dispose();
   },
@@ -92,32 +95,38 @@ export const test = base.extend<ApiFixtures>({
     await use(await registerAndLogin(api, 'secondary'));
   },
 
-  authed: async ({ user }, use) => {
-    const context = await request.newContext({
+  authed: async ({ playwright, extraHTTPHeaders, user }, use) => {
+    const context = await playwright.request.newContext({
       baseURL: baseUrls().gateway,
-      extraHTTPHeaders: { authorization: `Bearer ${user.token}`, accept: 'application/json' },
+      extraHTTPHeaders: { ...extraHTTPHeaders, authorization: `Bearer ${user.token}` },
     });
     await use(context);
     await context.dispose();
   },
 
-  authedAsOther: async ({ otherUser }, use) => {
-    const context = await request.newContext({
+  authedAsOther: async ({ playwright, extraHTTPHeaders, otherUser }, use) => {
+    const context = await playwright.request.newContext({
       baseURL: baseUrls().gateway,
-      extraHTTPHeaders: { authorization: `Bearer ${otherUser.token}`, accept: 'application/json' },
+      extraHTTPHeaders: { ...extraHTTPHeaders, authorization: `Bearer ${otherUser.token}` },
     });
     await use(context);
     await context.dispose();
   },
 
-  authService: async ({ playwright }, use) => {
-    const context = await playwright.request.newContext({ baseURL: baseUrls().auth });
+  authService: async ({ playwright, extraHTTPHeaders }, use) => {
+    const context = await playwright.request.newContext({
+      baseURL: baseUrls().auth,
+      extraHTTPHeaders,
+    });
     await use(context);
     await context.dispose();
   },
 
-  notesService: async ({ playwright }, use) => {
-    const context = await playwright.request.newContext({ baseURL: baseUrls().notes });
+  notesService: async ({ playwright, extraHTTPHeaders }, use) => {
+    const context = await playwright.request.newContext({
+      baseURL: baseUrls().notes,
+      extraHTTPHeaders,
+    });
     await use(context);
     await context.dispose();
   },

@@ -14,10 +14,11 @@ test.describe('Resilience and error handling', () => {
 
   test('rejects an over-sized payload with 413', async ({ authed }) => {
     const response = await authed.post('/notes', {
-      data: { title: 'Huge', body: 'x'.repeat(400_000) },
+      data: { title: 'Huge', padding: 'x'.repeat(400_000) },
     });
 
-    expect([400, 413]).toContain(response.status());
+    expect(response.status()).toBe(413);
+    expect((await response.json()).error.code).toBe('PAYLOAD_TOO_LARGE');
   });
 
   test('returns a consistent error envelope for every failure mode', async ({ api, authed }) => {
@@ -72,7 +73,10 @@ test.describe('Resilience and error handling', () => {
     ]);
 
     for (const response of results) expect(response.status()).toBe(200);
-    expect((await (await authed.get(`/notes/${note.id}`)).json()).id).toBe(note.id);
+    const final = await (await authed.get(`/notes/${note.id}`)).json();
+    expect(final.id).toBe(note.id);
+    expect(final.title).toBe('write-a');
+    expect(final.body).toBe('write-b');
   });
 
   test('does not hang when a request carries an unexpected content type', async ({ authed }) => {
