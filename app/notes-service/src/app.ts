@@ -17,9 +17,9 @@ export function createApp(
   app.disable('x-powered-by');
   app.set('trust proxy', true);
 
-  app.use(express.json({ limit: '256kb' }));
   app.use(requestContext(config, logger));
   app.use(accessLog());
+  app.use(express.json({ limit: '256kb' }));
 
   // System routes stay unauthenticated: kubelet probes do not carry a JWT.
   app.use('/', createSystemRouter(store, config));

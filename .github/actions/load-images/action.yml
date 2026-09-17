@@ -69,7 +69,17 @@ runs:
           if [ "$FROM_REGISTRY" = 'true' ]; then
             # Pulling once on the host and side-loading beats letting four
             # shard pods each pull the same image from GHCR inside the cluster.
-            docker pull -q "$ref"
+            for attempt in 1 2 3 4; do
+              if docker pull -q "$ref"; then
+                break
+              fi
+              if [ "$attempt" = 4 ]; then
+                echo "::error::could not pull $ref after $attempt attempts"
+                exit 1
+              fi
+              echo "::warning::pulling $ref failed (attempt $attempt of 4), retrying in $((attempt * 10))s"
+              sleep $((attempt * 10))
+            done
             kind load docker-image --name "$CLUSTER" "$ref"
           else
             kind load image-archive --name "$CLUSTER" "/tmp/images/${component}.tar"
