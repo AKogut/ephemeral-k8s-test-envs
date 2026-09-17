@@ -66,6 +66,10 @@ export function notFoundHandler() {
  * bug: it is logged with a stack trace and reported as a generic 500 so that
  * internal details never reach a client.
  */
+function isClientError(status: unknown): status is number {
+  return typeof status === 'number' && status >= 400 && status < 500;
+}
+
 export function errorHandler() {
   return (error: unknown, req: Request, res: Response, _next: NextFunction): void => {
     if (error instanceof ApiError) {
@@ -91,6 +95,14 @@ export function errorHandler() {
     }
     if (maybeBodyParserError?.type === 'entity.parse.failed') {
       res.status(400).json(new ApiError(400, 'MALFORMED_JSON', 'Request body is not valid JSON').toBody());
+      return;
+    }
+    if (typeof maybeBodyParserError?.type === 'string' && isClientError(maybeBodyParserError.status)) {
+      const apiError =
+        maybeBodyParserError.status === 415
+          ? new ApiError(415, 'UNSUPPORTED_MEDIA_TYPE', 'Request body encoding is not supported')
+          : new ApiError(maybeBodyParserError.status, 'UNREADABLE_BODY', 'Request body could not be read');
+      res.status(apiError.status).json(apiError.toBody());
       return;
     }
 

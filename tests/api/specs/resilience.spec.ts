@@ -86,4 +86,34 @@ test.describe('Resilience and error handling', () => {
     expect(response.status()).toBeGreaterThanOrEqual(400);
     expect(response.status()).toBeLessThan(500);
   });
+
+  test('rejects a body in an unsupported charset with a structured 415', async ({ api, authed }) => {
+    const responses = [
+      await api.post('/auth/register', {
+        headers: { 'content-type': 'application/json; charset=ebcdic' },
+        data: '{}',
+      }),
+      await authed.post('/notes', {
+        headers: { 'content-type': 'application/json; charset=ebcdic' },
+        data: '{}',
+      }),
+    ];
+
+    for (const response of responses) {
+      expect(response.status()).toBe(415);
+      expect(response.headers()['content-type']).toContain('application/json');
+      expect((await response.json()).error.code).toBe('UNSUPPORTED_MEDIA_TYPE');
+    }
+  });
+
+  test('rejects a body in an unsupported content encoding with a structured 415', async ({ authed }) => {
+    const response = await authed.post('/notes', {
+      headers: { 'content-type': 'application/json', 'content-encoding': 'x-unknown' },
+      data: '{"title":"encoded"}',
+    });
+
+    expect(response.status()).toBe(415);
+    expect(response.headers()['content-type']).toContain('application/json');
+    expect((await response.json()).error.code).toBe('UNSUPPORTED_MEDIA_TYPE');
+  });
 });
