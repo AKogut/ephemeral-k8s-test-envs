@@ -23,12 +23,18 @@ const HOP_BY_HOP = new Set([
   'upgrade',
   'host',
   'content-length',
+  'expect',
 ]);
+
+const REQUEST_ONLY_STRIP = new Set(['content-encoding']);
+
+const UNSUPPORTED_METHODS = new Set(['CONNECT', 'TRACE', 'TRACK']);
 
 function forwardableHeaders(req: Request): Headers {
   const headers = new Headers();
   for (const [key, value] of Object.entries(req.headers)) {
-    if (HOP_BY_HOP.has(key.toLowerCase()) || value === undefined) continue;
+    const name = key.toLowerCase();
+    if (HOP_BY_HOP.has(name) || REQUEST_ONLY_STRIP.has(name) || value === undefined) continue;
     headers.set(key, Array.isArray(value) ? value.join(', ') : value);
   }
   headers.set('x-request-id', req.requestId);
@@ -55,10 +61,29 @@ export interface ProxyOptions {
 
 export function proxyHandler(options: ProxyOptions) {
   return async function proxy(req: Request, res: Response): Promise<void> {
+    if (UNSUPPORTED_METHODS.has(req.method)) {
+      res.status(405).json({
+        error: { code: 'METHOD_NOT_ALLOWED', message: `Method ${req.method} is not supported` },
+      });
+      return;
+    }
+
     // Inside an `app.use(mount, ...)` handler, req.url is the path below the
     // mount point, so the upstream path is rebuilt from targetPrefix.
     const suffix = req.url === '/' ? '' : req.url;
-    const target = `${options.upstream.baseUrl}${options.targetPrefix}${suffix}`;
+    const target = new URL(`${options.upstream.baseUrl}${options.targetPrefix}${suffix}`);
+    const basePath = new URL(options.upstream.baseUrl).pathname.replace(/\/+$/, '');
+    const mountPath = `${basePath}${options.targetPrefix}`;
+    if (
+      mountPath !== '' &&
+      target.pathname !== mountPath &&
+      !target.pathname.startsWith(`${mountPath}/`)
+    ) {
+      res.status(404).json({
+        error: { code: 'NOT_FOUND', message: 'No gateway route matches this path' },
+      });
+      return;
+    }
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), options.timeoutMs);
@@ -88,7 +113,7 @@ export function proxyHandler(options: ProxyOptions) {
 
       const payload = Buffer.from(await upstreamResponse.arrayBuffer());
       req.log.debug('proxied', {
-        target,
+        target: target.href,
         status: upstreamResponse.status,
         upstreamMs: Number(process.hrtime.bigint() - startedAt) / 1e6,
       });
@@ -99,7 +124,7 @@ export function proxyHandler(options: ProxyOptions) {
     } catch (error) {
       const aborted = error instanceof Error && error.name === 'AbortError';
       req.log.error('upstream request failed', {
-        target,
+        target: target.href,
         upstream: options.upstream.name,
         timedOut: aborted,
         err: error instanceof Error ? error.message : String(error),
