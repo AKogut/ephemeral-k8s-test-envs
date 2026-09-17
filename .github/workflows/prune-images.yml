@@ -37,6 +37,7 @@ jobs:
   prune:
     name: Prune ${{ matrix.component }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       # Not fail-fast: one image failing to prune is no reason to leave the
       # other four unpruned.

@@ -84,6 +84,15 @@ spec:
               value: {{ .Values.tests.retries | quote }}
             - name: PW_TEST_TIMEOUT_MS
               value: {{ .Values.tests.testTimeoutMs | quote }}
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "test-env.secretName" . }}
+                  key: {{ include "test-env.secretKey" . }}
+            - name: JWT_ISSUER
+              value: {{ .Values.jwt.issuer | quote }}
+            - name: JWT_AUDIENCE
+              value: {{ .Values.jwt.audience | quote }}
             - name: HOME
               value: /tmp
             - name: POD_NAME

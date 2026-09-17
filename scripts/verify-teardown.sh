@@ -10,7 +10,7 @@
 # chart created — those outlive a namespace deletion if nobody removes them, and
 # are the classic way a "fully cleaned up" cluster slowly fills with junk.
 #
-# Exit codes: 0 everything is gone, 1 something is still there.
+# Exit codes: 0 everything is gone, 1 something is still there or unverifiable.
 
 set -Eeuo pipefail
 
@@ -37,12 +37,31 @@ done
 
 printf '\n%s==> Verifying teardown of namespace '%s'%s\n' "$BOLD" "$NAMESPACE" "$RESET"
 
+if ! reachability=$(kubectl get --raw /version --request-timeout=15s 2>&1 >/dev/null); then
+  bad "cannot reach the cluster, so nothing can be verified: $reachability"
+  printf '\n%s✗ Teardown not verified: the cluster could not be asked.%s\n\n' "$RED" "$RESET"
+  exit 1
+fi
+
 failures=0
+
+namespace_exists() {
+  local error
+  if error=$(kubectl get namespace "$NAMESPACE" -o name 2>&1 >/dev/null); then
+    return 0
+  fi
+  if [[ "$error" == *NotFound* ]]; then
+    return 1
+  fi
+  bad "could not look up namespace '$NAMESPACE': $error"
+  printf '\n%s✗ Teardown not verified: the namespace could not be looked up.%s\n\n' "$RED" "$RESET"
+  exit 1
+}
 
 # 1. The namespace itself. A namespace can sit in Terminating for a while, so
 #    this waits rather than checking once.
 deadline=$(( $(date +%s) + TIMEOUT_SECONDS ))
-while kubectl get namespace "$NAMESPACE" >/dev/null 2>&1; do
+while namespace_exists; do
   phase=$(kubectl get namespace "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || echo unknown)
   if [[ $(date +%s) -ge $deadline ]]; then
     bad "namespace '$NAMESPACE' still exists after ${TIMEOUT_SECONDS}s (phase: $phase)"
@@ -53,12 +72,17 @@ while kubectl get namespace "$NAMESPACE" >/dev/null 2>&1; do
   info "namespace is $phase, waiting…"
   sleep 3
 done
-kubectl get namespace "$NAMESPACE" >/dev/null 2>&1 || ok "namespace '$NAMESPACE' does not exist"
+namespace_exists || ok "namespace '$NAMESPACE' does not exist"
 
 # 2. Cluster-scoped leftovers. These are not namespaced, so deleting the
 #    namespace does not remove them.
 for kind in clusterrole clusterrolebinding; do
-  leftovers=$(kubectl get "$kind" -o name 2>/dev/null | grep -- "-${NAMESPACE}$" || true)
+  if ! names=$(kubectl get "$kind" -o name); then
+    bad "could not list ${kind}s"
+    failures=$((failures + 1))
+    continue
+  fi
+  leftovers=$(grep -- "-${NAMESPACE}$" <<<"$names" || true)
   if [[ -n "$leftovers" ]]; then
     bad "cluster-scoped $kind objects survived teardown:"
     printf '        %s\n' "$leftovers"
@@ -70,8 +94,10 @@ done
 
 # 3. PersistentVolumes released by the namespace's PVCs. A Retain reclaim policy
 #    leaves these behind, which is how a cluster quietly runs out of storage.
-orphans=$(kubectl get pv -o jsonpath="{range .items[?(@.spec.claimRef.namespace=='$NAMESPACE')]}{.metadata.name}{'\n'}{end}" 2>/dev/null || true)
-if [[ -n "$orphans" ]]; then
+if ! orphans=$(kubectl get pv -o jsonpath="{range .items[?(@.spec.claimRef.namespace=='$NAMESPACE')]}{.metadata.name}{'\n'}{end}"); then
+  bad "could not list PersistentVolumes"
+  failures=$((failures + 1))
+elif [[ -n "$orphans" ]]; then
   bad "PersistentVolumes still bound to the deleted namespace:"
   printf '        %s\n' "$orphans"
   failures=$((failures + 1))
@@ -81,11 +107,14 @@ fi
 
 # 4. The Helm release record.
 if [[ -n "$RELEASE" ]]; then
-  if helm status "$RELEASE" -n "$NAMESPACE" >/dev/null 2>&1; then
+  if helm_error=$(helm status "$RELEASE" -n "$NAMESPACE" 2>&1 >/dev/null); then
     bad "helm release '$RELEASE' still recorded"
     failures=$((failures + 1))
-  else
+  elif [[ "$helm_error" == *"release: not found"* ]]; then
     ok "no helm release record"
+  else
+    bad "could not ask helm about release '$RELEASE': $helm_error"
+    failures=$((failures + 1))
   fi
 fi
 
