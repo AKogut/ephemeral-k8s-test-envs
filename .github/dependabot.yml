@@ -97,6 +97,9 @@ updates:
   - package-ecosystem: docker-compose
     directory: /
     schedule: { interval: monthly }
+    ignore:
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: docker
     directories:
