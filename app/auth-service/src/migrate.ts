@@ -29,19 +29,19 @@ export async function runMigrations(
 ): Promise<number> {
   const client = await pool.connect();
   try {
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS schema_migrations (
-        id         INTEGER PRIMARY KEY,
-        name       TEXT NOT NULL,
-        applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
-      )
-    `);
-
     // Blocks rather than failing, so a second Job — a retried pod, the other
     // service, a human — waits and then finds the work already done.
     await client.query('SELECT pg_advisory_lock($1)', [ADVISORY_LOCK_KEY]);
 
     try {
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+          id         INTEGER PRIMARY KEY,
+          name       TEXT NOT NULL,
+          applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `);
+
       const applied = await client.query<{ id: number }>('SELECT id FROM schema_migrations');
       const done = new Set(applied.rows.map((row) => row.id));
 
