@@ -61,6 +61,10 @@ export function notFoundHandler() {
   };
 }
 
+function isClientError(status: unknown): status is number {
+  return typeof status === 'number' && status >= 400 && status < 500;
+}
+
 export function errorHandler() {
   return (error: unknown, req: Request, res: Response, _next: NextFunction): void => {
     if (error instanceof ApiError) {
@@ -78,13 +82,21 @@ export function errorHandler() {
       return;
     }
 
-    const bodyParserError = error as { type?: string };
+    const bodyParserError = error as { type?: string; status?: number };
     if (bodyParserError?.type === 'entity.too.large') {
       res.status(413).json(new ApiError(413, 'PAYLOAD_TOO_LARGE', 'Request body is too large').toBody());
       return;
     }
     if (bodyParserError?.type === 'entity.parse.failed') {
       res.status(400).json(new ApiError(400, 'MALFORMED_JSON', 'Request body is not valid JSON').toBody());
+      return;
+    }
+    if (typeof bodyParserError?.type === 'string' && isClientError(bodyParserError.status)) {
+      const apiError =
+        bodyParserError.status === 415
+          ? new ApiError(415, 'UNSUPPORTED_MEDIA_TYPE', 'Request body encoding is not supported')
+          : new ApiError(bodyParserError.status, 'UNREADABLE_BODY', 'Request body could not be read');
+      res.status(apiError.status).json(apiError.toBody());
       return;
     }
 
