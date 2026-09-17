@@ -216,10 +216,12 @@ Ingress is enabled), gateway to auth and notes, notes to auth, the shard pods to
 the gateway, auth, notes and MinIO, the aggregator to MinIO and the Kubernetes
 API, the teardown Job to the Kubernetes API, and — with the Postgres backend —
 the services and the migration Job to Postgres. It is on by default. Whether it
-does anything depends on the CNI: kind's default ignores NetworkPolicy, so there
-the policy is rendered and inert, while Calico and Cilium enforce it. The rules
-are run against Calico on every pull request, which is the only way to know they
-are right.
+does anything depends on the CNI. kindnet, kind's default, enforces it from the
+v1.36 node images the pipeline pins, so every CI environment runs with its
+traffic policed; before that it ignored NetworkPolicy and the rules were rendered
+and inert. Calico and Cilium enforce it too, and the rules are also run against
+Calico on every pull request, with a control that proves a refused pod is
+reachable once the policy is removed.
 
 ## Image sizes
 

@@ -352,7 +352,7 @@ route would be exercised for the first time by a stranger's contribution.
 
 ```yaml
 KIND_VERSION:    v0.32.0
-KIND_NODE_IMAGE: kindest/node:v1.35.0
+KIND_NODE_IMAGE: kindest/node:v1.36.1
 ```
 
 MinIO, Calico and ingress-nginx were pinned from the start, each for the same
@@ -373,9 +373,17 @@ than a floor nothing has ever been tested against.
 version this laptop's `kind` defaults to, and the self-destruct job went red:
 its pod cannot reach the API server's ClusterIP within its retry budget on that
 version — `UND_ERR_CONNECT_TIMEOUT` to `10.96.0.1:443`, reproduced locally and
-in CI, with v1.35.0 green as the control. So the pin is v1.35.0 and the
-incompatibility is [issue #120](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/120)
+in CI, with v1.35.0 green as the control. So the pin went to v1.35.0 and the
+incompatibility became [issue #120](https://github.com/AKogut/ephemeral-k8s-test-envs/issues/120)
 rather than a surprise.
+
+The cause was not Kubernetes. The kindnet shipped in the v1.36 node images
+enforces NetworkPolicy, the earlier one ignored it, and the chart rendered its
+API-server egress rule only when the aggregator was enabled. The self-destruct
+job disables the aggregator, so its pod was default-denied on the one route it
+needs. With the rule tied to either consumer, the pin moved to v1.36.1, and
+every environment in the pipeline now runs with its NetworkPolicy enforced
+rather than rendered.
 
 That is the argument for pinning, in one paragraph: the breakage exists either
 way. Pinned, it arrives in a pull request that names the version it came with.

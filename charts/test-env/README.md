@@ -69,7 +69,7 @@ Only the ones worth knowing about. Everything else is commented in
 | `database.backend` | `sqlite` | `postgres` lets auth and notes scale — [ADR 0008](../../docs/adr/0008-networked-database-mode.md) |
 | `gateway.ingress.enabled` | `false` | Requires `gateway.ingress.domain` |
 | `teardown.selfDestruct.enabled` | `false` | CI turns it on; interactive use should not |
-| `networkPolicy.enabled` | `true` | Inert on a CNI that does not enforce NetworkPolicy, such as kind's default |
+| `networkPolicy.enabled` | `true` | Enforced by kindnet from the kindest/node v1.36 images, and by Calico or Cilium; inert on a CNI that does not implement NetworkPolicy |
 
 ## Validation
 
