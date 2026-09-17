@@ -5,7 +5,7 @@ Default-deny, plus exactly the flows this stack needs.
 Every rule below was arrived at by running the suite against Calico and reading
 what broke. The version this replaces had been rendered, linted and read for
 several releases without a single packet ever being evaluated against it — kind's
-default CNI ignores NetworkPolicy — and it was wrong in three ways that only
+default CNI ignored NetworkPolicy until the v1.36 node images — and it was wrong in three ways that only
 enforcement could reveal (#90):
 
   - the shard pods had no egress at all, so the suite could not reach the

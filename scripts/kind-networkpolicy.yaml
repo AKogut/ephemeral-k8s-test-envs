@@ -1,9 +1,10 @@
 # A cluster whose CNI actually enforces NetworkPolicy.
 #
-# kind ships kindnet, which implements pod networking and ignores NetworkPolicy
-# entirely. Objects apply, nothing is dropped, and a wrong policy is
+# kind ships kindnet, which ignored NetworkPolicy entirely before the v1.36 node
+# images. Objects applied, nothing was dropped, and a wrong policy was
 # indistinguishable from a correct one — which is how the chart's policy stayed
-# unexercised through every release so far (#90).
+# unexercised for several releases (#90). kindnet enforces it now; Calico is kept
+# as a second, independent implementation of the same API.
 #
 # The default CNI is therefore disabled and Calico installed in its place. The
 # pod subnet matches Calico's own default IP pool so its manifest needs no

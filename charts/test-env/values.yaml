@@ -400,8 +400,8 @@ podAnnotations: {}
 # -- A default-deny NetworkPolicy plus the specific flows this stack needs.
 # Whether it isolates anything depends on the cluster's CNI, as described below.
 networkPolicy:
-  # On by default. Whether it does anything depends on the CNI: kind's default
-  # ignores NetworkPolicy, Calico and Cilium enforce it. The rules are exercised
+  # On by default. Whether it does anything depends on the CNI: kindnet enforces
+  # it from the kindest/node v1.36 images, as do Calico and Cilium. The rules are exercised
   # against Calico on every pull request, including a check that an unlabelled
   # pod is refused and a control proving it is reachable without them — see
   # the "NetworkPolicy is enforced" job.

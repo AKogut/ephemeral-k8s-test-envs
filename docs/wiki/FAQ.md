@@ -24,8 +24,10 @@ minutes and money per environment. A namespace gives you isolated names, RBAC,
 quotas and — with a NetworkPolicy — traffic, in milliseconds and for free.
 
 The policy is on by default and default-deny. Whether it does anything depends
-on the CNI: kind's ignores NetworkPolicy, Calico and Cilium enforce it. So the
-rules are exercised against Calico on every pull request, including a check that
+on the CNI: kindnet enforces it from the kindest/node v1.36 images this project
+pins, as do Calico and Cilium; older kind images ignore it. So every CI
+environment runs with the policy enforced, and the rules are also exercised
+against Calico on every pull request, including a check that
 an unlabelled pod cannot reach the services and a control proving it can once
 the policy is removed — otherwise "blocked" might only mean a wrong port.
 
