@@ -75,6 +75,28 @@ test.describe('Resilience and error handling', () => {
     expect((await (await authed.get(`/notes/${note.id}`)).json()).id).toBe(note.id);
   });
 
+  test('a note deleted during concurrent writes is reported as gone, never as an empty success', async ({ authed }) => {
+    const note = await createNote(authed, { title: 'Doomed' });
+
+    const [deletes, patches] = await Promise.all([
+      Promise.all(Array.from({ length: 3 }, () => authed.delete(`/notes/${note.id}`))),
+      Promise.all(
+        Array.from({ length: 3 }, (_unused, i) =>
+          authed.patch(`/notes/${note.id}`, { data: { title: `racing ${i}` } }),
+        ),
+      ),
+    ]);
+
+    expect(deletes.map((response) => response.status()).sort()).toEqual([204, 404, 404]);
+    for (const response of patches) {
+      expect([200, 404]).toContain(response.status());
+      const body = await response.json();
+      if (response.status() === 200) expect(body.id).toBe(note.id);
+      else expect(body.error.code).toBe('NOT_FOUND');
+    }
+    expect((await authed.get(`/notes/${note.id}`)).status()).toBe(404);
+  });
+
   test('does not hang when a request carries an unexpected content type', async ({ authed }) => {
     const response = await authed.post('/notes', {
       headers: { 'content-type': 'text/plain' },
