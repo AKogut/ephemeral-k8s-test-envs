@@ -1397,8 +1397,8 @@ jobs:
         run: |
           set -euo pipefail
           for db in auth notes; do
-            kubectl -n "$NS" wait --for=condition=complete --timeout=5m "job/pgenv-test-env-migrate-$db"
-            kubectl -n "$NS" logs "job/pgenv-test-env-migrate-$db" --tail=5
+            kubectl -n "$NS" wait --for=condition=complete --timeout=5m "job/pgenv-test-env-migrate-$db-r1"
+            kubectl -n "$NS" logs "job/pgenv-test-env-migrate-$db-r1" --tail=5
           done
 
           # One row per migration, in each service's own database. Two services

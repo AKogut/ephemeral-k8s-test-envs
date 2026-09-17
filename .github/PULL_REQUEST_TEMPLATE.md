@@ -8,7 +8,7 @@
 
 - [ ] `npm run lint`
 - [ ] `npm run typecheck`
-- [ ] `npm run test:coverage` — the 90 unit tests, against the thresholds CI enforces
+- [ ] `npm run test:coverage` — the 210 unit tests, against the thresholds CI enforces
 - [ ] `npm run helm:lint`
 - [ ] `./scripts/local-demo.sh` — the full lifecycle on kind
 - [ ] The API suite passes against a running environment

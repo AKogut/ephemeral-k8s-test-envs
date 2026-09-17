@@ -98,13 +98,15 @@ It ends with `verify-teardown.sh`, which is the check that matters most.
 
 ```
 feat(sharding): weight shards by historical duration
-fix(notes): declare ESCAPE so LIKE honours escaped wildcards
+fix(app): declare ESCAPE so LIKE honours escaped wildcards
 docs(adr): record why the runner image ships no browsers
 chore(deps): bump express to 5.1.0
 ```
 
-Scopes in use: `auth`, `notes`, `gateway`, `tests`, `sharding`, `aggregation`,
-`chart`, `ci`, `docs`.
+Scopes in use: `app` for the three services, `chart`, `ci`, `sharding`,
+`results`, `teardown`, `fleet`, `scripts`, `adr`, `wiki`, `lint`, `security`,
+and `deps` / `deps-dev` for dependency bumps. A change that spans several of
+them takes no scope.
 
 **Comments explain why, not what.** The code already says what it does. A comment
 earns its place by recording a decision, a constraint or a trap:
@@ -157,7 +159,7 @@ plausible. Getting weights wrong costs shard balance, never correctness.
 - Anything that could be set to nonsense should be checked in the
   `test-env.validate` helper, so it fails at render time rather than as a Pending
   pod.
-- Add the invalid case to the "Helm rejects invalid values" step in
+- Add the invalid case to the "Reject invalid values" step in
   `.github/workflows/ci.yml`.
 - If you add a workload, decide whether it needs a service account token. The
   default is `automountServiceAccountToken: false`, and it should stay that way
