@@ -102,7 +102,7 @@ The real suite, real weights, 4 shards:
 ```
 $ npm run shard:plan
 
-Weights: tests/api/test-weights.json
+Weights: ../tests/api/test-weights.json
 Shard plan: 11 files across 4 shards
 Ideal weight per shard: 8.34 | makespan: 8.65 | balance: 96.4%
 
@@ -166,13 +166,27 @@ test.
 
 ## Regenerating the weights
 
-`test-weights.json` holds approximate wall-clock seconds per file. To refresh it
-after the suite changes shape, take the per-file durations from a full run's
-JUnit output (`/results/shard-*/junit.xml`, where each `<testsuite name="…">` is a
-spec file) and write them back.
+`test-weights.json` holds wall-clock seconds per file, measured rather than typed.
+After a run has left merged results in `results/merged/allure-results`:
 
-Stale weights are a balance problem, never a correctness problem, so this is
-worth doing occasionally rather than automatically.
+```bash
+npm run weights:update              # blends the measurement into the stored numbers
+npm run weights:update -- --dry-run # show the drift, write nothing
+```
+
+It blends rather than replaces — half the stored value, half the measurement by
+default, `--alpha 1` to take the measurement whole — because one run on a loaded
+machine is noisy. It refuses input spanning more than an hour, which is what a
+reused download directory holding several runs looks like, and whose summed
+durations would be inflated without looking wrong.
+
+Every CI run also computes the drift against its own results in the
+`Regenerate the shard weights from this run` step and publishes it to the job
+summary with `--dry-run`, rather than committing it: the weights have to be right
+about CI's machines, and the pipeline has no business pushing to `main`.
+
+Stale weights are a balance problem, never a correctness problem, so applying
+them is a deliberate step rather than an automatic one.
 
 ## Choosing a shard count
 

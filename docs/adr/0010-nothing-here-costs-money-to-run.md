@@ -60,8 +60,10 @@ negative test *and* a control, and the preview URL is served by a real ingress
 controller and routed by hostname. What remains genuinely cloud-only is a real
 `StorageClass` with provisioning latency, `imagePullSecrets` instead of
 side-loading, a cluster that outlives the run so leaks accumulate, a stricter
-PodSecurity baseline, and cost — which the fleet report can already compute in
-node-hours the moment there is something to compute it from.
+PodSecurity baseline, and cost. The fleet report does not measure that, and says
+so: on free runners there is no bill to read, and what it does record — how long
+each environment existed — is wall clock on a runner, not node-hours on a
+cluster somebody pays for.
 
 ## Consequences
 

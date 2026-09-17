@@ -57,4 +57,4 @@ Not every choice is architectural:
 - **`node:test` for unit tests** — it ships with the runtime and the scripts
   package needed no framework.
 
-Recording these would dilute the six that actually matter.
+Recording these would dilute the ten that actually matter.
