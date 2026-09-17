@@ -8,7 +8,7 @@
 #   ./scripts/local-demo.sh --no-tests      # just stand the environment up
 #   ./scripts/local-demo.sh --cleanup-only  # remove a previous run's leftovers
 #
-# Requires: docker, kind, kubectl, helm. Nothing else, and no cloud account.
+# Requires: docker, kind, kubectl, helm, and node for the test run. No cloud account.
 
 set -Eeuo pipefail
 
@@ -43,7 +43,7 @@ warn()  { printf '    %s!%s %s\n' "$YELLOW" "$RESET" "$*"; }
 die()   { printf '\n%serror:%s %s\n' "$RED" "$RESET" "$*" >&2; exit 1; }
 
 usage() {
-  sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^#\{1,2\} \{0,1\}//'
+  sed -n '2,11p' "${BASH_SOURCE[0]}" | sed 's/^#\{1,2\} \{0,1\}//'
   exit 0
 }
 
@@ -104,7 +104,11 @@ EOF
 
   # The claim this project makes is that nothing is left behind. Asserting it
   # here means a broken teardown fails the demo rather than going unnoticed.
-  "$REPO_ROOT/scripts/verify-teardown.sh" --namespace "$NAMESPACE" --release "$RELEASE" || exit_code=1
+  if kind get clusters 2>/dev/null | grep -qx "$CLUSTER_NAME"; then
+    "$REPO_ROOT/scripts/verify-teardown.sh" --namespace "$NAMESPACE" --release "$RELEASE" || exit_code=1
+  else
+    ok "no kind cluster '$CLUSTER_NAME', so nothing from this environment remains in it"
+  fi
 
   if [[ "$KEEP_CLUSTER" != true ]]; then
     if kind delete cluster --name "$CLUSTER_NAME" >/dev/null 2>&1; then
@@ -125,6 +129,16 @@ docker info >/dev/null 2>&1 || die "the docker daemon is not running"
 if [[ "$CLEANUP_ONLY" == true ]]; then
   KEEP=false
   cleanup
+fi
+
+if [[ "$RUN_TESTS" == true ]]; then
+  require node npm
+  if [[ ! -f "$REPO_ROOT/scripts/dist/sync-results.js" ]]; then
+    step "Building the results tooling"
+    npm --prefix "$REPO_ROOT/scripts" ci
+    npm --prefix "$REPO_ROOT/scripts" run build
+    ok "scripts/dist built"
+  fi
 fi
 
 trap cleanup EXIT
@@ -216,15 +230,20 @@ if [[ "$RUN_TESTS" == true ]]; then
     || warn "aggregator produced no logs"
 
   step "Copying the merged report to $RESULTS_DIR"
+  FETCH_STATUS=0
   "$REPO_ROOT/scripts/fetch-results.sh" \
     --namespace "$NAMESPACE" --release "$RELEASE" --output "$RESULTS_DIR" \
-    || warn "could not copy results out of the cluster"
+    || FETCH_STATUS=1
 
   step "Done"
   if [[ $TEST_STATUS -eq 0 ]]; then
     ok "all $SHARDS shards passed"
   else
     warn "some shards failed — see the summary above"
+  fi
+  if [[ $FETCH_STATUS -ne 0 ]]; then
+    warn "could not copy results out of the cluster"
+    TEST_STATUS=1
   fi
   info "merged Allure results: $RESULTS_DIR/merged/allure-results"
   info "render the report:     npx allure generate $RESULTS_DIR/merged/allure-results --clean -o $RESULTS_DIR/allure-report"
