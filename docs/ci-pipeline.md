@@ -177,13 +177,19 @@ click away rather than buried in a wall of output.
 Three steps ask questions that only a live environment can answer:
 
 - **The quota actually refuses something.** A pod is submitted that the
-  namespace's `ResourceQuota` must reject. A quota nothing has ever bounced is a
-  number in a manifest.
+  namespace's `ResourceQuota` must reject, and the refusal has to say
+  `exceeded quota`. A quota nothing has ever bounced is a number in a manifest,
+  and a pod rejected for some other reason proves nothing about the quota.
 - **The shards actually spread across the cluster.** Asserted against the nodes
   that were *schedulable*, not against a fixed number — a run on a cluster with
   one healthy worker should report a smaller spread, not a failure.
 - **The report was actually collected.** Checked after teardown, because the
   copy-out step runs against a namespace that is about to stop existing.
+
+The first two are gates, and a gate that fails must not cost the evidence. The
+aggregation, results tooling and copy-out steps run on `!cancelled()`, so a run
+that goes red on the spread or the quota still publishes the report that
+explains it.
 
 And `npm run weights:update` regenerates the shard weights from the durations
 this run measured, so the plan the next run computes is informed by the last one.
@@ -202,10 +208,10 @@ Every cleanup step is `if: always()`:
 
 ```yaml
 - name: Tear down the environment
-  if: always() && !inputs.keep_environment
+  if: always()
 
 - name: Prove the environment is gone
-  if: always() && !inputs.keep_environment
+  if: always()
 
 - name: Delete the kind cluster
   if: always()
@@ -228,11 +234,19 @@ And the run is only allowed to go red **after** all of that:
 ```yaml
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 ```
 
 A second push to the same PR cancels the first run. Without this, two runs would
 fight over the namespace `pr-123` — one installing while the other tears down.
+
+Pushes to `main` queue instead of cancelling. Every run on `main` is the record
+for its commit; two merges a few minutes apart would otherwise leave the first
+one with a cancelled run and no verdict.
+
+Every job also carries a `timeout-minutes`, set well above its measured
+duration and above any wait inside it. A hung step fails in minutes rather than
+holding a runner, and every required check, for GitHub's six-hour default.
 
 Cancellation is exactly the case layer 2 of the teardown story cannot cover: a
 cancelled job does not run its `if: always()` steps to completion. That is why
@@ -323,12 +337,11 @@ scheduling problem.
 
 ## Running it by hand
 
-`workflow_dispatch` takes three inputs:
+`workflow_dispatch` takes two inputs:
 
 | Input | Purpose |
 |---|---|
 | `shards` | Try a different shard count without editing the workflow |
-| `keep_environment` | Skip teardown to debug a failure — the self-destruct Job still applies, so it cannot leak permanently |
 | `simulate_fork` | Force `CAN_WRITE` false, so the fork path above actually executes here |
 
 `simulate_fork` exists because a path nothing takes is a path nobody has tested.

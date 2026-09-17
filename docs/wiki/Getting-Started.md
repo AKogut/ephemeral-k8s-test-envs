@@ -8,7 +8,7 @@ cd ephemeral-k8s-test-envs
 ./scripts/local-demo.sh
 ```
 
-Needs `docker`, `kind`, `kubectl` and `helm`. No cloud account, no configuration,
+Needs `docker`, `kind`, `kubectl`, `helm` and Node 22 with `npm`. No cloud account, no configuration,
 roughly three minutes.
 
 That single command creates a cluster, builds five images, side-loads them,

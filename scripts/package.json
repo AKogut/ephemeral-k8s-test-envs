@@ -18,7 +18,7 @@
     "fleet": "node --import tsx src/fleet-report.ts"
   },
   "devDependencies": {
-    "@types/node": "^22.18.8",
+    "@types/node": "^22.20.2",
     "tsx": "^4.23.13",
     "typescript": "^5.9.3"
   }
