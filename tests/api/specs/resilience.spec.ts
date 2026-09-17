@@ -47,7 +47,9 @@ test.describe('Resilience and error handling', () => {
 
   test('rejects an unsupported method on a known path', async ({ authed }) => {
     const response = await authed.fetch('/notes', { method: 'TRACE' });
-    expect(response.status()).toBeGreaterThanOrEqual(400);
+
+    expect(response.status()).toBe(405);
+    expect((await response.json()).error.code).toBe('METHOD_NOT_ALLOWED');
   });
 
   test('handles concurrent writes from one user without losing any', async ({ authed }) => {
