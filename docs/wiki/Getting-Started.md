@@ -39,51 +39,73 @@ Five phases, in order:
 
 ```
 ==> Installing the chart into namespace 'demo-local'
+    ✓ release installed
+
 ==> Waiting for the application to become ready
     ✓ all deployments available
-
 NAME                                     READY   STATUS
-demo-test-env-auth-79c9d8d7cd-mmzsg      1/1     Running
-demo-test-env-gateway-6465789854-chhrt   1/1     Running
-demo-test-env-gateway-6465789854-pcl8z   1/1     Running
-demo-test-env-notes-684464c798-vxmld     1/1     Running
-demo-test-env-shards-r1-0-tsrm7          1/1     Running
-demo-test-env-shards-r1-1-c5rlg          1/1     Running
-demo-test-env-shards-r1-2-bgqh2          1/1     Running
-demo-test-env-shards-r1-3-86wcg          1/1     Running
+demo-test-env-aggregate-r1-lmrl5         0/1     Init:0/1
+demo-test-env-auth-7fb8ff9b56-f59fz      1/1     Running
+demo-test-env-gateway-6c6d586696-48b2c   1/1     Running
+demo-test-env-gateway-6c6d586696-k4s5f   1/1     Running
+demo-test-env-minio-547cbb758d-5b7s2     1/1     Running
+demo-test-env-notes-78cf55b7f-5w4fn      1/1     Running
+demo-test-env-shards-r1-0-t9llt          1/1     Running
+demo-test-env-shards-r1-1-rjd7w          1/1     Running
+demo-test-env-shards-r1-2-86cpj          1/1     Running
+demo-test-env-shards-r1-3-5j96s          1/1     Running
 ```
 
-Four shard pods from **one** Job object, each running a different slice.
+Four shard pods from **one** Job object, each running a different slice. MinIO
+holds their results until the aggregator — still in its init container, waiting
+for the shard Job to finish — merges them.
 
 **3. The run**
 
 ```
---- shard 0 (demo-test-env-shards-r1-0-tsrm7) ---
-  ✓ specs/auth-me.spec.ts:4:3 › GET /auth/me › returns the authenticated user
+--- shard 0 (demo-test-env-shards-r1-0-t9llt) ---
+Running 13 tests using 2 workers
+
+  ✓   1 specs/auth-login.spec.ts:17:3 › POST /auth/login › accepts the email in a different case than it was registered with (176ms)
   …
-  13 passed (3.0s)
-[shard 0/4] finished in 3.6s with exit code 0
+  13 passed (2.9s)
+[shard 0/4] finished in 3.4s with exit code 0
+bucket: created
+uploaded 17 file(s), 15.5 KB -> demo-local/shard-0/
 ```
 
 **4. The report**
 
 ```
-## ✅ All tests passed
-| Total | Passed | Failed | Broken | Skipped | Flaky | Retries |
-| 105   | 105    | 0      | 0      | 0       | 0     | 0       |
+Found 4 shard director(ies) under /results
+  shard 0: 13 test result file(s)
+  …
 
-Sequential cost would have been 9.2s; the run took 2.8s
-— a 3.27× speedup (81.6% shard efficiency).
+## ✅ All tests passed
+
+| Total | Passed | Failed | Broken | Skipped | Flaky | Retries |
+|------:|-------:|-------:|-------:|--------:|------:|--------:|
+| 105 | 105 | 0 | 0 | 0 | 0 | 0 |
+
+Sequential cost would have been **9.6s**; the run took **2.7s** — a **3.56×** speedup (89.1% shard efficiency).
 ```
+
+The timings vary from run to run and machine to machine; the counts do not.
 
 **5. The teardown, and the proof**
 
 ```
+==> Tearing down
+    ✓ helm release removed
+    ✓ namespace deleted
+
 ==> Verifying teardown of namespace demo-local
     ✓ namespace 'demo-local' does not exist
     ✓ no leftover clusterroles
     ✓ no leftover clusterrolebindings
     ✓ no orphaned PersistentVolumes
+    ✓ no helm release record
+
 ✓ Teardown verified: nothing from this environment remains.
 ```
 

@@ -202,19 +202,31 @@ should see in any Kubernetes work:
   have no business holding a cluster credential, so `automountServiceAccountToken`
   is `false` for all of them.
 - **Least-privilege RBAC for the two workloads that do need the API.** The
-  aggregator may `get` exactly one named Job. The teardown Job may `delete`
-  exactly one namespace, pinned by `resourceNames`.
+  aggregator may `get` exactly one named Job. The teardown Job may `get` and
+  `delete` exactly one namespace, pinned by `resourceNames`, and `patch` exactly
+  two objects — its own ClusterRole and ClusterRoleBinding — so it can hand them
+  to that namespace as an owner and they are garbage-collected with it.
 - **A JWT secret that survives upgrades.** The chart generates one per release and
   reuses the stored value on `helm upgrade`, so redeploying a PR environment does
   not invalidate tokens mid-run.
 
-`networkPolicy.enabled` ships a default-deny plus the four flows the stack needs.
-It is off by default because kind's CNI does not enforce NetworkPolicy — shipping
-it enabled there would look like isolation while enforcing nothing.
+`networkPolicy.enabled` ships a default-deny plus exactly the flows the stack
+needs: DNS, ingress to the gateway (from the ingress controller too, when an
+Ingress is enabled), gateway to auth and notes, notes to auth, the shard pods to
+the gateway, auth, notes and MinIO, the aggregator to MinIO and the Kubernetes
+API, the teardown Job to the Kubernetes API, and — with the Postgres backend —
+the services and the migration Job to Postgres. It is on by default. Whether it
+does anything depends on the CNI: kind's default ignores NetworkPolicy, so there
+the policy is rendered and inert, while Calico and Cilium enforce it. The rules
+are run against Calico on every pull request, which is the only way to know they
+are right.
 
 ## Image sizes
 
-Every image is a three-stage build: dependencies, compile, runtime. The compiler,
+Every image is a multi-stage build. The three services have three stages —
+dependencies, compile, runtime. `api-tests` also has three, but the first
+compiles the shard planner rather than the suite. `aggregator` has two, compile
+and runtime, because it has no production dependencies to install. The compiler,
 type definitions and the native toolchain for `better-sqlite3` stay in the
 discarded stages.
 

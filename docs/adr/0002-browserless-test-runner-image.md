@@ -26,7 +26,8 @@ every PR.
 Build the runner on `node:22-bookworm-slim` with browser downloads suppressed:
 
 ```dockerfile
-FROM node:22.22.0-bookworm-slim AS deps
+ARG NODE_VERSION=22.23.2
+FROM node:${NODE_VERSION}-bookworm-slim AS deps
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 RUN npm ci --no-audit --no-fund
 ```

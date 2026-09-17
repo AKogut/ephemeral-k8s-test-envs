@@ -1,6 +1,6 @@
 # ADR 0001 — A namespace is the unit of an environment, and Helm does not template it
 
-**Status:** Accepted · **Date:** 2026-08-10
+**Status:** Accepted · **Date:** 2026-08-10 · **Superseded in part by** [ADR 0007](0007-object-storage-for-shard-results.md) (2026-08-11)
 
 ## Context
 
@@ -67,7 +67,10 @@ the teardown verification added in Phase 4 check them independently.
   be reported separately.
 - The chart works identically under `helm install`, `helm template | kubectl apply`
   and `helm upgrade`.
-- Results survive `helm uninstall` long enough to be copied out.
+- Results survive `helm uninstall` long enough to be copied out. *No longer true
+  since [ADR 0007](0007-object-storage-for-shard-results.md): results live in an
+  in-release MinIO on an `emptyDir`, go with `helm uninstall`, and CI copies them
+  out before teardown starts.*
 
 **Bad**
 
