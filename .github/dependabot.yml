@@ -17,8 +17,21 @@ version: 2
 # Both remain open to minor and patch updates, so security fixes still arrive.
 
 updates:
-  # Five independent npm packages — no workspace hoisting, so each is tracked
+  # Six independent npm packages — no workspace hoisting, so each is tracked
   # separately and an update to one cannot silently change another.
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 3
+    groups:
+      dev-dependencies:
+        dependency-type: development
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+
   - package-ecosystem: npm
     directory: /app/auth-service
     schedule: { interval: monthly }
@@ -76,6 +89,12 @@ updates:
         update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/*
+    schedule: { interval: monthly }
+
+  - package-ecosystem: docker-compose
     directory: /
     schedule: { interval: monthly }
 

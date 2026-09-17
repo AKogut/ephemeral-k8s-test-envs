@@ -28,7 +28,7 @@ services:
     healthcheck:
       # `-U app` matters: without it pg_isready asks as root, which is not a
       # role here, and reports the server as up before it can serve anyone.
-      test: ["CMD-SHELL", "pg_isready -U app -d postgres"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U app -d postgres"]
       interval: 3s
       timeout: 3s
       retries: 20
