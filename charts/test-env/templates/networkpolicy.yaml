@@ -317,7 +317,8 @@ spec:
         - protocol: TCP
           port: 9000
 {{- end }}
-{{- if .Values.aggregator.enabled }}
+{{- end }}
+{{- if or (and .Values.tests.enabled .Values.aggregator.enabled) .Values.teardown.selfDestruct.enabled }}
 ---
 {{/*
 The aggregator, and the self-destruct Job if it is enabled.
@@ -356,7 +357,7 @@ spec:
           port: 443
         - protocol: TCP
           port: 6443
-{{- if .Values.minio.enabled }}
+{{- if and .Values.tests.enabled .Values.minio.enabled }}
     - to:
         - podSelector:
             matchLabels:
@@ -364,7 +365,6 @@ spec:
       ports:
         - protocol: TCP
           port: 9000
-{{- end }}
 {{- end }}
 {{- end }}
 {{- end }}
