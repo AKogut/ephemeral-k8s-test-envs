@@ -250,7 +250,7 @@ or a `/` in it would end the URL somewhere other than where it means to.
 {{- end -}}
 
 {{- define "test-env.migrateJobName" -}}
-{{- printf "%s-migrate-%s" (include "test-env.fullname" .context) .database -}}
+{{- printf "%s-migrate-%s-r%d" (include "test-env.fullname" .context) .database (int .context.Release.Revision) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
 {{- define "test-env.minioServiceName" -}}
