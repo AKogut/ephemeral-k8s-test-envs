@@ -69,13 +69,13 @@ function databaseFromEnv(env: NodeJS.ProcessEnv): DatabaseConfig {
     backend,
     path: env.DATABASE_PATH ?? ':memory:',
     url,
-    poolSize: intFromEnv('DB_POOL_SIZE', 10),
-    connectTimeoutMs: intFromEnv('DB_CONNECT_TIMEOUT_MS', 5_000),
+    poolSize: intFromEnv('DB_POOL_SIZE', 10, env),
+    connectTimeoutMs: intFromEnv('DB_CONNECT_TIMEOUT_MS', 5_000, env),
   };
 }
 
-function intFromEnv(name: string, fallback: number): number {
-  const raw = process.env[name];
+function intFromEnv(name: string, fallback: number, env: NodeJS.ProcessEnv): number {
+  const raw = env[name];
   if (raw === undefined || raw === '') return fallback;
   const parsed = Number.parseInt(raw, 10);
   if (Number.isNaN(parsed)) {
@@ -96,7 +96,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   return {
     serviceName: env.SERVICE_NAME ?? 'auth-service',
-    port: intFromEnv('PORT', 3001),
+    port: intFromEnv('PORT', 3001, env),
     nodeEnv,
     envId: env.ENV_ID ?? 'local',
     database: databaseFromEnv(env),
@@ -104,10 +104,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       secret: secret === '' ? DEV_JWT_SECRET : secret,
       issuer: env.JWT_ISSUER ?? 'ephemeral-test-envs/auth-service',
       audience: env.JWT_AUDIENCE ?? 'ephemeral-test-envs',
-      ttlSeconds: intFromEnv('JWT_TTL_SECONDS', 3600),
+      ttlSeconds: intFromEnv('JWT_TTL_SECONDS', 3600, env),
     },
-    scryptCostLog2: intFromEnv('SCRYPT_COST_LOG2', 14),
+    scryptCostLog2: intFromEnv('SCRYPT_COST_LOG2', 14, env),
     logLevel: ['debug', 'info', 'warn', 'error'].includes(logLevel) ? logLevel : 'info',
-    shutdownGraceMs: intFromEnv('SHUTDOWN_GRACE_MS', 10_000),
+    shutdownGraceMs: intFromEnv('SHUTDOWN_GRACE_MS', 10_000, env),
   };
 }

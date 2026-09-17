@@ -76,12 +76,13 @@ export function createNotesRouter(store: NoteStore, config: Config): Router {
       const query = listQuerySchema.parse(req.query);
       const ownerId = req.user!.id;
 
+      const limit = Math.min(query.limit, config.maxPageSize);
       const { items, total } = await store.list({
         ownerId,
         ...(query.q ? { search: query.q } : {}),
         ...(query.tag ? { tag: query.tag } : {}),
         ...(query.pinned ? { pinned: query.pinned === 'true' } : {}),
-        limit: Math.min(query.limit, config.maxPageSize),
+        limit,
         offset: query.offset,
         sort: query.sort,
         order: query.order,
@@ -91,7 +92,7 @@ export function createNotesRouter(store: NoteStore, config: Config): Router {
         items,
         pagination: {
           total,
-          limit: query.limit,
+          limit,
           offset: query.offset,
           hasMore: query.offset + items.length < total,
         },
@@ -138,7 +139,9 @@ export function createNotesRouter(store: NoteStore, config: Config): Router {
       const id = noteId(req);
       await requireOwnedNote(store, ownerId, id);
       const input = createNoteSchema.parse(req.body);
-      res.status(200).json(await store.replace(ownerId, id, input));
+      const note = await store.replace(ownerId, id, input);
+      if (!note) throw ApiError.notFound('Note not found');
+      res.status(200).json(note);
     }),
   );
 
@@ -149,7 +152,9 @@ export function createNotesRouter(store: NoteStore, config: Config): Router {
       const id = noteId(req);
       await requireOwnedNote(store, ownerId, id);
       const patch = patchNoteSchema.parse(req.body);
-      res.status(200).json(await store.update(ownerId, id, patch));
+      const note = await store.update(ownerId, id, patch);
+      if (!note) throw ApiError.notFound('Note not found');
+      res.status(200).json(note);
     }),
   );
 
@@ -159,7 +164,7 @@ export function createNotesRouter(store: NoteStore, config: Config): Router {
       const ownerId = req.user!.id;
       const id = noteId(req);
       await requireOwnedNote(store, ownerId, id);
-      await store.remove(ownerId, id);
+      if (!(await store.remove(ownerId, id))) throw ApiError.notFound('Note not found');
       res.status(204).end();
     }),
   );

@@ -11,9 +11,9 @@ export function createApp(store: UserStore, config: Config, logger: Logger): Exp
   app.disable('x-powered-by');
   app.set('trust proxy', true);
 
-  app.use(express.json({ limit: '64kb' }));
   app.use(requestContext(config, logger));
   app.use(accessLog());
+  app.use(express.json({ limit: '64kb' }));
 
   app.use('/', createSystemRouter(store, config));
   app.use('/', createAuthRouter(store, config));

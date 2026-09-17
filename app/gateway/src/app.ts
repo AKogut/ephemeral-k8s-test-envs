@@ -20,10 +20,6 @@ export function createApp(config: Config, logger: Logger): Express {
   app.disable('x-powered-by');
   app.set('trust proxy', true);
 
-  // Bodies are buffered rather than parsed: the gateway has no business
-  // interpreting payloads it only forwards.
-  app.use(express.raw({ type: () => true, limit: config.maxBodyBytes }));
-
   app.use((req: Request, res: Response, next: NextFunction) => {
     const incoming = req.header('x-request-id');
     req.requestId = incoming && incoming.length <= 200 ? incoming : randomUUID();
@@ -43,6 +39,10 @@ export function createApp(config: Config, logger: Logger): Express {
     });
     next();
   });
+
+  // Bodies are buffered rather than parsed: the gateway has no business
+  // interpreting payloads it only forwards.
+  app.use(express.raw({ type: () => true, limit: config.maxBodyBytes }));
 
   app.get('/healthz', (_req, res) => {
     res.status(200).json({ status: 'ok', service: config.serviceName, envId: config.envId });
@@ -112,10 +112,24 @@ export function createApp(config: Config, logger: Logger): Express {
   // The fourth parameter is what makes Express treat this as an error handler,
   // so it stays even though nothing calls it.
   app.use((error: unknown, req: Request, res: Response, _next: NextFunction) => {
-    const parseError = error as { type?: string };
+    const parseError = error as { type?: string; status?: number };
     if (parseError?.type === 'entity.too.large') {
       res.status(413).json({
         error: { code: 'PAYLOAD_TOO_LARGE', message: 'Request body is too large' },
+      });
+      return;
+    }
+    if (
+      typeof parseError?.type === 'string' &&
+      typeof parseError.status === 'number' &&
+      parseError.status >= 400 &&
+      parseError.status < 500
+    ) {
+      const unsupported = parseError.status === 415;
+      res.status(parseError.status).json({
+        error: unsupported
+          ? { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'Request body encoding is not supported' }
+          : { code: 'UNREADABLE_BODY', message: 'Request body could not be read' },
       });
       return;
     }

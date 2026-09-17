@@ -24,6 +24,7 @@ jobs:
   publish:
     name: Mirror docs/wiki to the GitHub wiki
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
 
@@ -33,12 +34,18 @@ jobs:
           # The wiki is a separate git repository. It only exists once the first
           # page has been created, so a failure here is expected on a fresh repo
           # and is reported rather than treated as a build failure.
-          if git clone "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git" wiki 2>/dev/null; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::The wiki repository does not exist yet. Create the first page in the GitHub UI (Wiki tab), then re-run this workflow."
+          url="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git"
+          if ! probe=$(git ls-remote "$url" 2>&1); then
+            if [[ "$probe" == *"not found"* ]]; then
+              echo "exists=false" >> "$GITHUB_OUTPUT"
+              echo "::warning::The wiki repository does not exist yet. Create the first page in the GitHub UI (Wiki tab), then re-run this workflow."
+              exit 0
+            fi
+            echo "::error::could not reach the wiki repository: $probe"
+            exit 1
           fi
+          git clone "$url" wiki
+          echo "exists=true" >> "$GITHUB_OUTPUT"
 
       - name: Sync pages
         if: steps.clone.outputs.exists == 'true'

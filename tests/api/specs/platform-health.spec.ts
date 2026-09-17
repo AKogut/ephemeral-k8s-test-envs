@@ -75,7 +75,7 @@ test.describe('Environment health', () => {
 
     // The chart sets this mode on purpose so the deployment exercises a real
     // service-to-service call over cluster DNS.
-    expect(['jwt-only', 'verify-with-auth-service']).toContain(body.checks.authMode);
+    expect(body.checks.authMode).toBe('verify-with-auth-service');
   });
 
   test('liveness does not require authentication', async ({ notesService }) => {

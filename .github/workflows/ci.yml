@@ -20,10 +20,6 @@ on:
         description: Number of parallel test shards
         type: number
         default: 4
-      keep_environment:
-        description: Skip teardown for debugging (the self-destruct Job still applies)
-        type: boolean
-        default: false
       simulate_fork:
         description: Take the fork path — build without pushing, carry the images as artifacts
         type: boolean
@@ -33,7 +29,7 @@ concurrency:
   # A new push to the same PR replaces the previous run and, with it, the
   # previous environment. Without this, two runs would fight over one namespace.
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -78,6 +74,7 @@ jobs:
   chart:
     name: Helm chart
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
 
@@ -182,6 +179,7 @@ jobs:
   sharding:
     name: Shard planner
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
 
@@ -289,6 +287,7 @@ jobs:
   suite:
     name: API suite typecheck
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -302,6 +301,7 @@ jobs:
   scripts:
     name: Shell scripts
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - name: shellcheck
@@ -310,6 +310,7 @@ jobs:
   code:
     name: Typecheck and build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -332,6 +333,7 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -353,6 +355,7 @@ jobs:
   images:
     name: Build ${{ matrix.component }} image
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       security-events: write # to publish the vulnerability scan
@@ -457,6 +460,7 @@ jobs:
   runner:
     name: Build the test runner image
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       security-events: write # to publish the vulnerability scan
@@ -548,6 +552,7 @@ jobs:
   aggregator:
     name: Build the aggregator image
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       security-events: write # to publish the vulnerability scan
@@ -680,6 +685,7 @@ jobs:
   stack:
     name: docker compose stack
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
@@ -722,6 +728,7 @@ jobs:
   postgres:
     name: docker compose stack on Postgres
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
@@ -824,8 +831,9 @@ jobs:
   build:
     name: Package ${{ matrix.component }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     # Only after everything that can be checked without a cluster has passed.
-    needs: [chart, sharding, suite, scripts, code, images, runner, aggregator, stack, postgres]
+    needs: [chart, sharding, suite, scripts, code, lint, images, runner, aggregator, stack, postgres]
     permissions:
       contents: read
       # Silently downgraded to read on a fork pull request. Asked for anyway:
@@ -923,6 +931,7 @@ jobs:
   networkpolicy:
     name: NetworkPolicy is enforced
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs: build
     permissions:
       contents: read
@@ -1034,6 +1043,7 @@ jobs:
   preview-url:
     name: The preview URL reaches the gateway
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs: build
     permissions:
       contents: read
@@ -1194,6 +1204,7 @@ jobs:
   self-destruct:
     name: The self-destruct layer fires, and leaves nothing
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: build
     permissions:
       contents: read
@@ -1319,6 +1330,7 @@ jobs:
   postgres-environment:
     name: An environment on Postgres
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     needs: build
     permissions:
       contents: read
@@ -1484,6 +1496,7 @@ jobs:
   ephemeral-environment:
     name: Deploy, test, aggregate, tear down
     runs-on: ubuntu-latest
+    timeout-minutes: 75
     needs: build
     permissions:
       contents: read
@@ -1582,14 +1595,18 @@ jobs:
 
           kubectl -n "$ns" describe resourcequota | sed -n '/Resource/,$p'
 
-          if kubectl -n "$ns" run quota-probe --image=busybox:1.36 --restart=Never \
+          if refusal=$(kubectl -n "$ns" run quota-probe --image=busybox:1.36 --restart=Never \
               --overrides='{"spec":{"containers":[{"name":"p","image":"busybox:1.36","command":["true"],"resources":{"requests":{"cpu":"64","memory":"64Mi"},"limits":{"cpu":"64","memory":"64Mi"}}}]}}' \
-              >/dev/null 2>&1; then
+              2>&1 >/dev/null); then
             echo "::error::the namespace accepted a 64-core pod — the quota is not being enforced"
             kubectl -n "$ns" delete pod quota-probe --ignore-not-found
             exit 1
           fi
-          echo "confirmed: a pod beyond the ceiling is refused"
+          if [[ "$refusal" != *"exceeded quota"* ]]; then
+            echo "::error::the 64-core pod was refused, but not by the quota: $refusal"
+            exit 1
+          fi
+          echo "confirmed: a pod beyond the ceiling is refused — $refusal"
 
           # And a pod that declares nothing must be given defaults rather than
           # rejected, which is the LimitRange's entire job.
@@ -1652,6 +1669,7 @@ jobs:
           printf '| Shard spread | %s of %s schedulable nodes |\n' "$nodes" "$schedulable" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Aggregate results
+        if: ${{ !cancelled() }}
         continue-on-error: true
         run: |
           ns="${{ steps.env.outputs.namespace }}"
@@ -1660,6 +1678,7 @@ jobs:
           kubectl -n "$ns" logs "job/$job" --tail=200 || true
 
       - name: Build the results tooling
+        if: ${{ !cancelled() }}
         run: |
           # fetch-results.sh talks to the bucket through the compiled sync CLI.
           # Nothing else in this job needs node, which is why this was missing —
@@ -1669,6 +1688,7 @@ jobs:
 
       - name: Copy results out of the cluster
         id: collect
+        if: ${{ !cancelled() }}
         continue-on-error: true
         run: |
           ./scripts/fetch-results.sh \
@@ -1751,10 +1771,11 @@ jobs:
               : '### The ephemeral environment produced no test summary\nSee the workflow logs.';
 
             const marker = '<!-- ephemeral-test-envs-summary -->';
-            const { data: comments } = await github.rest.issues.listComments({
+            const comments = await github.paginate(github.rest.issues.listComments, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
+              per_page: 100,
             });
             const existing = comments.find((c) => c.body?.includes(marker));
             const payload = `${marker}\n${body}`;
@@ -1777,7 +1798,7 @@ jobs:
       # cancelled. This is what makes "ephemeral" true rather than aspirational.
 
       - name: Tear down the environment
-        if: always() && !inputs.keep_environment
+        if: always()
         run: |
           ns="${{ steps.env.outputs.namespace }}"
           # Each command tolerates the previous one failing: the verification
@@ -1786,7 +1807,7 @@ jobs:
           kubectl delete namespace "$ns" --wait=true --timeout=5m || true
 
       - name: Prove the environment is gone
-        if: always() && !inputs.keep_environment
+        if: always()
         run: |
           # Not a formality: this is the claim the whole project makes, so it is
           # asserted rather than assumed. A leftover namespace, a cluster-scoped
@@ -1800,7 +1821,7 @@ jobs:
         run: kind delete cluster --name ephemeral-test-envs || true
 
       - name: The report was actually collected
-        if: always() && !inputs.keep_environment
+        if: always()
         run: |
           # `continue-on-error` above exists so teardown still runs. It also
           # means a broken collection step reports success, which is how the
