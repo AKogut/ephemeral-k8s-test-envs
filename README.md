@@ -156,7 +156,7 @@ Three independent layers, because no single one covers every failure:
 
 | Layer | Mechanism | Covers |
 |---|---|---|
-| 1 | `ttlSecondsAfterFinished` on every Job | Finished pods, always |
+| 1 | `ttlSecondsAfterFinished` on the test, aggregator and teardown Jobs | Finished pods, always |
 | 2 | `helm uninstall` + `kubectl delete namespace`, `if: always()` | Failed deploys, failed tests, failed aggregation |
 | 3 | A self-destruct Job that deletes its own namespace | **A cancelled workflow or a dead runner** — when CI never runs again |
 
@@ -182,10 +182,13 @@ is working.
 
 ### 3. Images built for the job they actually do
 
-Every image is a three-stage build. The compiler, the type definitions and the
-native toolchain for `better-sqlite3` all stay in the discarded stages.
+Every image is a multi-stage build: three stages for the services (dependencies,
+compile, runtime) and for `api-tests` (the compiled sharder, dependencies,
+runtime), two for `aggregator` (compile, runtime), which has no production
+dependencies to install. The compiler, the type definitions and the native
+toolchain for `better-sqlite3` all stay in the discarded stages.
 
-| Image | Naive single-stage (`node:22`) | This repo (`node:22-slim`, 3-stage) | Reduction |
+| Image | Naive single-stage (`node:22`) | This repo (`node:22-slim`, multi-stage) | Reduction |
 |---|---:|---:|---:|
 | `auth-service` | 1.71 GB | **378 MB** | **78%** |
 | `gateway` | 1.67 GB | **351 MB** | **79%** |
