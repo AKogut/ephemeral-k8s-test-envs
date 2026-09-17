@@ -13,8 +13,8 @@ kubectl -n $NS describe pod <pod>          # scheduling and probe failures live 
 kubectl -n $NS logs <pod> --tail=100
 kubectl -n $NS logs <pod> --previous       # after a crash loop
 
-# Everything belonging to one environment
-kubectl get all -n $NS -l app.kubernetes.io/instance=$NS
+# Everything belonging to one environment — the namespace is the environment
+kubectl get all -n $NS
 ```
 
 Every service logs one JSON object per line and stamps `x-request-id` on every
@@ -173,8 +173,8 @@ That is the script doing its job. Read which check failed:
   was lost, they are orphaned:
 
   ```bash
-  kubectl get clusterrole,clusterrolebinding | grep -- "-$NS$"
-  kubectl delete clusterrole,clusterrolebinding -l app.kubernetes.io/instance=$NS
+  kubectl get clusterrole,clusterrolebinding -o name | grep -- "-$NS$"
+  kubectl delete clusterrole,clusterrolebinding -l ephemeral-test-envs.io/env-id=$NS
   ```
 
 - **A PersistentVolume is still bound.** A `Retain` reclaim policy leaves it
@@ -226,11 +226,17 @@ run that was merely slower. The same report runs weekly on its own.
 On a cluster where environments can accumulate:
 
 ```bash
-kubectl get ns -l app.kubernetes.io/part-of=ephemeral-test-env
+# Every environment is a Helm release in its own namespace
+helm list -A
 
-kubectl get ns -l app.kubernetes.io/part-of=ephemeral-test-env \
-  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.creationTimestamp}{"\n"}{end}'
+# CI names them pr-<number>, or run-<id> without a pull request
+kubectl get ns -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.creationTimestamp}{"\n"}{end}' \
+  | grep -E '^(pr|run)-'
 ```
+
+Not `kubectl get ns -l app.kubernetes.io/part-of=…`: the chart labels everything
+it creates, but the namespace comes from `helm --create-namespace`, which does
+not carry the chart's labels, so that selector matches nothing.
 
 Remove one properly:
 

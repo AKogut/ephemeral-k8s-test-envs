@@ -25,8 +25,8 @@ used when nothing sets it, stays **14**.
 
 ```yaml
 auth:
-  # log2 of the scrypt cost. 14 is the production figure; 12 keeps ~105 API
-  # tests from spending most of their time hashing passwords.
+  # -- log2 of the scrypt cost. 14 is the production figure; 12 keeps a test
+  # suite from spending most of its time hashing throwaway passwords.
   scryptCostLog2: 12
 ```
 

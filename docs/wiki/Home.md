@@ -59,7 +59,7 @@ small. It exists to make a multi-pod namespace and a real service-to-service cal
 | Shard balance | 96.4% of a perfect split |
 | Speedup | 3.27× versus sequential |
 | Image size | 1.71 GB → 378 MB (78% smaller) via multi-stage builds |
-| Unit tests | 72, covering the planner, the merge and the Job-status logic |
+| Unit tests | 210, covering the planner, the merge, the Job-status logic, the weights, the fleet report and the Kubernetes, S3 and zip clients |
 
 ## Project management
 

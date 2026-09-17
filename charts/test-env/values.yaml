@@ -398,8 +398,7 @@ containerSecurityContext:
 podAnnotations: {}
 
 # -- A default-deny NetworkPolicy plus the specific flows this stack needs.
-# Off by default because kind ships without a policy-enforcing CNI, so enabling
-# it there would give a false sense of security rather than actual isolation.
+# Whether it isolates anything depends on the cluster's CNI, as described below.
 networkPolicy:
   # On by default. Whether it does anything depends on the CNI: kind's default
   # ignores NetworkPolicy, Calico and Cilium enforce it. The rules are exercised

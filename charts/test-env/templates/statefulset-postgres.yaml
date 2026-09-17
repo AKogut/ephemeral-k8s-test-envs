@@ -101,7 +101,7 @@ spec:
               # anyone. A readiness probe that lies is worse than none — the
               # migration Job would start against a database that refuses it.
               command:
-                ["pg_isready", "-U", {{ .Values.database.postgres.user | quote }}, "-d", "postgres"]
+                ["pg_isready", "-h", "127.0.0.1", "-U", {{ .Values.database.postgres.user | quote }}, "-d", "postgres"]
             initialDelaySeconds: 3
             periodSeconds: 3
             timeoutSeconds: 3
@@ -109,7 +109,7 @@ spec:
           livenessProbe:
             exec:
               command:
-                ["pg_isready", "-U", {{ .Values.database.postgres.user | quote }}, "-d", "postgres"]
+                ["pg_isready", "-h", "127.0.0.1", "-U", {{ .Values.database.postgres.user | quote }}, "-d", "postgres"]
             initialDelaySeconds: 20
             periodSeconds: 10
             timeoutSeconds: 5
