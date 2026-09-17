@@ -29,6 +29,15 @@
   Tear it down — both of these, in this order:
     helm uninstall {{ .Release.Name }} -n {{ .Release.Namespace }}
     kubectl delete namespace {{ .Release.Namespace }}
+{{- if .Values.teardown.selfDestruct.enabled }}
 
-  Nothing removes this namespace automatically yet. A guaranteed teardown, and a
-  step that proves it happened, arrive in Phase 4.
+  If nobody does, the self-destruct Job deletes this namespace and its
+  cluster-scoped RBAC {{ .Values.teardown.selfDestruct.afterSeconds }}s after it starts.
+{{- else }}
+
+  Nothing removes this namespace automatically: teardown.selfDestruct.enabled
+  is false for this release.
+{{- end }}
+
+  Prove nothing is left (from a checkout of this repository):
+    ./scripts/verify-teardown.sh --namespace {{ .Release.Namespace }} --release {{ .Release.Name }}
