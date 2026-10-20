@@ -41,7 +41,7 @@ cd ephemeral-k8s-test-envs
 ./scripts/local-demo.sh
 ```
 
-A `kind` cluster, five images, a namespace, 105 tests across 4 parallel pods, an
+A `kind` cluster, five images, a namespace, 113 tests across 4 parallel pods, an
 aggregated report, and a verified teardown. **No cloud account, roughly three
 minutes.** Needs `docker`, `kind`, `kubectl`, `helm` and Node 22 with `npm`.
 
@@ -67,30 +67,30 @@ Output from a real CI run — this is the comment posted on the pull request:
 ```
 ## ✅ All tests passed
 
-**Environment:** `pr-54`   **Shards:** `4`
+**Environment:** `pr-160`   **Shards:** `4`
 
 | Total | Passed | Failed | Broken | Skipped | Flaky | Retries |
 |------:|-------:|-------:|-------:|--------:|------:|--------:|
-| 105   | 105    | 0      | 0      | 0       | 0     | 0       |
+| 113   | 113    | 0      | 0      | 0       | 0     | 0       |
 
 ### Sharding
 Ran on 4 parallel shard(s).
-Sequential cost would have been 20.4s; the run took 6.4s
-— a 3.19× speedup (79.7% shard efficiency).
+Sequential cost would have been 20.0s; the run took 6.2s
+— a 3.21× speedup (80.2% shard efficiency).
 
 | Shard | Tests | Passed | Failed | Duration |
 |------:|------:|-------:|-------:|---------:|
-| 0     | 13    | 13     | 0      | 3.5s     |
-| 1     | 31    | 31     | 0      | 5.1s     |
-| 2     | 27    | 27     | 0      | 5.4s     |
-| 3     | 34    | 34     | 0      | 6.4s     |
+| 0     | 13    | 13     | 0      | 3.4s     |
+| 1     | 31    | 31     | 0      | 4.5s     |
+| 2     | 39    | 39     | 0      | 6.2s     |
+| 3     | 30    | 30     | 0      | 5.8s     |
 ```
 
 …and the step that makes "ephemeral" a tested property rather than a claim:
 
 ```
-==> Verifying teardown of namespace pr-54
-    ✓ namespace 'pr-54' does not exist
+==> Verifying teardown of namespace pr-160
+    ✓ namespace 'pr-160' does not exist
     ✓ no leftover clusterroles
     ✓ no leftover clusterrolebindings
     ✓ no orphaned PersistentVolumes
@@ -237,7 +237,7 @@ because "I cannot tell" is not "you are unauthorised".
 
 ### The suite
 
-105 black-box API tests across 11 spec files:
+113 black-box API tests across 11 spec files:
 
 ```ts
 test("hides another user's note behind a 404, not a 403", async ({ authed, authedAsOther }) => {
@@ -273,7 +273,7 @@ app/
   auth-service/     JWT issuer — Express + SQLite + scrypt
   notes-service/    Notes CRUD — per-owner scoping, upstream token verification
   gateway/          Reverse proxy — hand-rolled on fetch, zero proxy dependencies
-tests/api/          105 Playwright API tests + the shard entrypoint
+tests/api/          113 Playwright API tests + the shard entrypoint
 scripts/            shard planner · result merge · k8s + S3 + zip clients (213 unit tests)
                     local-demo.sh · fetch-results.sh · verify-teardown.sh
 charts/test-env/    The Helm chart — one isolated environment per release
