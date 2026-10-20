@@ -58,9 +58,10 @@ env:
   # Pinned for the same reason: a CNI that changes under the policy tests would
   # make an upstream change and a real regression look identical.
   CALICO_MANIFEST: https://raw.githubusercontent.com/projectcalico/calico/v3.33.0/manifests/calico.yaml
-  # Pinned for the same reason, and the kind-specific manifest because it is the
-  # one that works without a cloud load balancer.
-  INGRESS_NGINX_MANIFEST: https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.15.1/deploy/static/provider/kind/deploy.yaml
+  # Pinned for the same reason. Traefik replaced ingress-nginx, which was
+  # retired in March 2026; its Service is ClusterIP because the probe runs
+  # inside the cluster and kind has no load balancer.
+  TRAEFIK_CHART_VERSION: 42.0.0
   # And the largest dependency of all, which was the one left floating: without
   # these two, the Kubernetes version of every environment in this pipeline is
   # whatever the action's default kind happens to ship this month, and
@@ -1079,9 +1080,6 @@ jobs:
           kubectl_version: ${{ env.KUBECTL_VERSION }}
           node_image: ${{ env.KIND_NODE_IMAGE }}
           cluster_name: preview
-          # ingress-nginx's kind manifest wants a node labelled
-          # ingress-ready=true, which kind does not set on its own.
-          config: scripts/kind-ingress.yaml
           wait: 120s
 
       - name: Put the images into the cluster
@@ -1099,33 +1097,15 @@ jobs:
           # changes under the test would make an upstream release and a real
           # regression look identical.
           set -euo pipefail
-          kubectl apply -f "$INGRESS_NGINX_MANIFEST"
+          helm install traefik oci://ghcr.io/traefik/helm/traefik --version "$TRAEFIK_CHART_VERSION" \
+            --namespace traefik --create-namespace \
+            --set service.type=ClusterIP \
+            --set ingressClass.isDefaultClass=true
 
-          # `wait --for=condition=available` straight after `apply` can match a
-          # status that has not caught up with the new spec. `rollout status`
+          # `wait --for=condition=available` straight after an install can match
+          # a status that has not caught up with the new spec. `rollout status`
           # cannot.
-          kubectl -n ingress-nginx rollout status deployment/ingress-nginx-controller --timeout=5m
-
-          # Then wait for the thing that actually refused the connection.
-          # ingress-nginx registers a validating webhook, so *creating* an
-          # Ingress calls back into the controller — and neither a rolled-out
-          # Deployment nor an admission endpoint with an address is the same as
-          # a webhook that answers. Helm fails the entire install on the
-          # difference:
-          #
-          #   failed calling webhook "validate.nginx.ingress.kubernetes.io":
-          #   dial tcp …:443: connect: connection refused
-          answered=0
-          for _ in $(seq 1 60); do
-            if kubectl -n default create ingress webhook-probe --class=nginx \
-                --rule="probe.invalid/*=probe:80" --dry-run=server -o name >/dev/null 2>&1; then
-              answered=1
-              break
-            fi
-            sleep 2
-          done
-          [ "$answered" = "1" ] || { echo "::error::the admission webhook never answered"; exit 1; }
-          echo "the admission webhook answers"
+          kubectl -n traefik rollout status deployment/traefik --timeout=5m
 
       - name: Install the environment with a hostname
         run: |
@@ -1167,7 +1147,7 @@ jobs:
             --command -- sleep 300
           kubectl -n default wait --for=condition=ready pod/urlprobe --timeout=120s
 
-          controller=http://ingress-nginx-controller.ingress-nginx.svc.cluster.local
+          controller=http://traefik.traefik.svc.cluster.local
 
           # Retried, because creating an Ingress and having it routed are two
           # different moments: the controller answers 503 for the rule it has
@@ -1217,7 +1197,7 @@ jobs:
         if: failure()
         run: |
           kubectl -n "$NS" get all,ingress -o wide || true
-          kubectl -n ingress-nginx logs deployment/ingress-nginx-controller --tail=40 || true
+          kubectl -n traefik logs deployment/traefik --tail=40 || true
 
       - name: Delete the cluster
         if: always()
