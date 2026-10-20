@@ -12,7 +12,7 @@ Needs `docker`, `kind`, `kubectl`, `helm` and Node 22 with `npm`. No cloud accou
 roughly three minutes.
 
 That single command creates a cluster, builds five images, side-loads them,
-installs the chart into a namespace, runs 105 tests across 4 parallel pods,
+installs the chart into a namespace, runs 113 tests across 4 parallel pods,
 merges the results, copies the report out, destroys everything, and then asserts
 that nothing survived.
 
@@ -63,15 +63,15 @@ container, waiting for the shard Job to finish — merges them.
 **3. The run**
 
 ```
---- shard 0 (demo-test-env-shards-r1-0-t9llt) ---
+--- shard 0 (demo-test-env-shards-r1-0-htzkn) ---
 Running 13 tests using 2 workers
 
-  ✓   1 specs/auth-login.spec.ts:17:3 › POST /auth/login › accepts the email in a different case than it was registered with (176ms)
+  ✓   1 specs/auth-login.spec.ts:4:3 › POST /auth/login › returns a bearer token and the user for valid credentials (103ms)
   …
-  13 passed (2.9s)
-[shard 0/4] finished in 3.4s with exit code 0
+  13 passed (2.8s)
+[shard 0/4] finished in 3.3s with exit code 0
 bucket: created
-uploaded 17 file(s), 15.5 KB -> demo-local/shard-0/
+uploaded 17 file(s), 16.5 KB -> demo-local/shard-0/
 ```
 
 **4. The report**
@@ -85,9 +85,9 @@ Found 4 shard director(ies) under /results
 
 | Total | Passed | Failed | Broken | Skipped | Flaky | Retries |
 |------:|-------:|-------:|-------:|--------:|------:|--------:|
-| 105 | 105 | 0 | 0 | 0 | 0 | 0 |
+| 113 | 113 | 0 | 0 | 0 | 0 | 0 |
 
-Sequential cost would have been **9.6s**; the run took **2.7s** — a **3.56×** speedup (89.1% shard efficiency).
+Sequential cost would have been **10.7s**; the run took **3.2s** — a **3.33×** speedup (83.2% shard efficiency).
 ```
 
 The timings vary from run to run and machine to machine; the counts do not.

@@ -39,7 +39,7 @@ BASE_URL=http://127.0.0.1:3000 AUTH_URL=http://127.0.0.1:3001 NOTES_URL=http://1
   npx playwright test
 ```
 
-The full 105-test suite takes about a second this way. Useful subsets:
+The full 113-test suite takes about a second this way. Useful subsets:
 
 ```bash
 npx playwright test specs/notes-crud.spec.ts     # one file

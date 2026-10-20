@@ -54,7 +54,7 @@ small. It exists to make a multi-pod namespace and a real service-to-service cal
 
 | | |
 |---|---|
-| Tests | 105 across 11 spec files |
+| Tests | 113 across 11 spec files |
 | Shards | 4 parallel pods (× 2 workers = 8 concurrent processes) |
 | Shard balance | 96.4% of a perfect split |
 | Speedup | 3.27× versus sequential |

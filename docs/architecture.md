@@ -65,7 +65,7 @@ flowchart TB
 | `gateway` | TypeScript / Express | Reverse proxy. `/auth/*` → auth-service, `/notes/*` → notes-service. Propagates `x-request-id`. | 2 |
 | `auth-service` | TypeScript / Express + SQLite | Registration, login, JWT issuance, `GET /me`. | 1 |
 | `notes-service` | TypeScript / Express + SQLite | Notes CRUD, per-owner scoping. Verifies tokens with auth-service. | 1 |
-| `api-tests` | Playwright | 105 black-box API tests. One image, run as N shard pods. | N (default 4) |
+| `api-tests` | Playwright | 113 black-box API tests. One image, run as N shard pods. | N (default 4) |
 | `aggregator` | TypeScript | Waits for the shard Job, merges results, writes the summary. Also hosts self-destruct. | 1 |
 
 The application is deliberately small. It exists to make a multi-pod namespace and
@@ -85,7 +85,7 @@ the deployment exercise things a single-service demo never would:
 - a readiness gate that actually matters — notes-service returns `503`, not `401`,
   when auth-service is unreachable, because "I cannot tell" is not "you are
   unauthorised"
-- a timeout and a bounded cache, so a suite of 105 tests does not turn
+- a timeout and a bounded cache, so a suite of 113 tests does not turn
   auth-service into the bottleneck
 
 Set `notes.authMode=jwt-only` to skip the hop. The suite passes either way; only
