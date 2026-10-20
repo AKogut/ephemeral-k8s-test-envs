@@ -11,7 +11,7 @@
  * no-dependencies command. CI provides the same server the chart deploys;
  * locally:
  *
- *   docker run -d --name object-store -p 19000:9000 \
+ *   docker run -d --name object-store -p 19000:9000 --tmpfs /data \
  *     -e ROOT_ACCESS_KEY=testkey -e ROOT_SECRET_KEY=testsecret123 \
  *     ghcr.io/versity/versitygw:v1.9.0 --port :9000 posix /data
  *

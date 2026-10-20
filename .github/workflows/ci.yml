@@ -198,7 +198,7 @@ jobs:
           # Started here rather than as a `services:` container because the
           # server needs command arguments and service containers cannot
           # override them.
-          docker run -d --name object-store -p 9000:9000 \
+          docker run -d --name object-store -p 9000:9000 --tmpfs /data \
             -e ROOT_ACCESS_KEY=testkey \
             -e ROOT_SECRET_KEY=testsecret123 \
             "$OBJECT_STORE_IMAGE" --port :9000 --health /health posix /data
