@@ -118,7 +118,7 @@ gateway:
   # auth from a Secret — and put it in `annotations`.
   ingress:
     enabled: false
-    className: nginx
+    className: ""
     # -- The host is <namespace>.<domain>, so an environment in `pr-123` is
     # reachable at pr-123.preview.example.com. Required when enabled; the chart
     # refuses to render without it rather than producing an Ingress with a

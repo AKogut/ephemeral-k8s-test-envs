@@ -404,11 +404,14 @@ every job that calls `helm` installs `HELM_VERSION`, and `kubectl` is the
 cluster's version rather than the kind action's default, which had already
 moved a minor ahead of it.
 
-ingress-nginx is pinned to `controller-v1.15.1`, its final release: the project
-was retired in March 2026 and its repository is archived. It stays because the
-preview-URL job tests the chart's `Ingress` against a real controller and that
-controller is still the most common one; it is pinned to the last version with
-security fixes rather than to the one from 2024 it was on.
+The preview-URL job's controller is Traefik, from its Helm chart pinned to
+`TRAEFIK_CHART_VERSION`. ingress-nginx, which it ran before, was retired in
+March 2026 and its repository is archived; an archived dependency is a pin that
+can no longer move. The chart's `Ingress` did not change. Its `className`
+defaults to empty, which leaves the choice to the cluster's default
+`IngressClass` instead of naming a controller that no longer ships, and the job
+proves that path: Traefik's class is the default there, and the Ingress names
+none.
 
 ## Local equivalence
 
