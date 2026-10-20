@@ -6,7 +6,7 @@
   "license": "MIT",
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=26"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -18,7 +18,7 @@
     "fleet": "node --import tsx src/fleet-report.ts"
   },
   "devDependencies": {
-    "@types/node": "^22.20.5",
+    "@types/node": "^26.6.5",
     "tsx": "^4.23.15",
     "typescript": "^6.0.3"
   }

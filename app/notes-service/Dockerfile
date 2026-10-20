@@ -5,7 +5,7 @@
 # compiled in a throwaway stage, and only dist/ plus production node_modules
 # reach the runtime image.
 
-ARG NODE_VERSION=22.23.3
+ARG NODE_VERSION=26.12.0
 
 # ---------------------------------------------------------------- deps --------
 FROM node:${NODE_VERSION}-trixie-slim AS deps
@@ -57,8 +57,7 @@ COPY --chown=node:node package.json ./
 
 # The entrypoint is `node`; no package manager runs here. Dropping npm removes
 # its vendored node-tar, which is otherwise a permanent fixture of every scan.
-RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
-           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 RUN mkdir -p /data && chown node:node /data
 VOLUME ["/data"]

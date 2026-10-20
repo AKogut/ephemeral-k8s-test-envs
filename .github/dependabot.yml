@@ -3,7 +3,7 @@ version: 2
 # Two majors are held back deliberately, in every npm package.
 #
 #   @types/node  — describes the standard library of a specific Node major. The
-#                  runtime here is Node 22 (`engines`, and every Dockerfile base
+#                  runtime here is Node 26 (`engines`, and every Dockerfile base
 #                  image), so types from a later major would advertise APIs that
 #                  are not present at runtime. This tracks the runtime, and moves
 #                  when the runtime moves — not before.
