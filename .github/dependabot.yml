@@ -8,11 +8,11 @@ version: 2
 #                  are not present at runtime. This tracks the runtime, and moves
 #                  when the runtime moves — not before.
 #
-#   typescript   — 7.x is a genuine breaking change for this code, not a flake:
-#                  it fails to resolve `@types/node` under the current tsconfigs
-#                  (TS2591) and then reports every inferred parameter as an
-#                  implicit `any` (TS7006). Adopting it is a deliberate migration
-#                  with its own pull request, not a dependency bump.
+#   typescript   — 7.x type-checks this code since the tsconfigs moved to 6.0,
+#                  but typescript-eslint, which the type-aware lint runs on,
+#                  accepts TypeScript below 6.1 only. A major that the lint
+#                  cannot load is a deliberate change with its own pull request,
+#                  not a dependency bump.
 #
 # Both remain open to minor and patch updates, so security fixes still arrive.
 
