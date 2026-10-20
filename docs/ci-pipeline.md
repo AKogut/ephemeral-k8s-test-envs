@@ -351,8 +351,11 @@ route would be exercised for the first time by a stranger's contribution.
 ## Everything the cluster depends on is pinned
 
 ```yaml
-KIND_VERSION:    v0.32.0
-KIND_NODE_IMAGE: kindest/node:v1.36.1
+KIND_VERSION:    v0.33.0
+KIND_NODE_IMAGE: kindest/node:v1.37.0
+KUBECTL_VERSION: v1.37.0
+HELM_VERSION:    v4.3.1
+runs-on:         ubuntu-26.04
 ```
 
 MinIO, Calico and ingress-nginx were pinned from the start, each for the same
@@ -389,6 +392,23 @@ That is the argument for pinning, in one paragraph: the breakage exists either
 way. Pinned, it arrives in a pull request that names the version it came with.
 Floating, it arrives on an unrelated Tuesday, in a job nobody changed, when the
 action bumps its default.
+
+**Then the runner floated.** `ubuntu-latest` began moving to Ubuntu 26.04 on
+2026-10-19, a few weeks of runs landing on either image. The two ship different
+Helm majors — 3.22.0 on 24.04, 4.3.0 on 26.04 — and while the `Helm chart` job
+installed its own, the five cluster jobs used whichever the runner happened to
+have. The same workflow ran Helm 3 or Helm 4 at random, and the two disagree
+about what `--wait` means: Helm 4 fails an install whose Job has failed while
+it is still waiting on anything else. Every workflow now names `ubuntu-26.04`,
+every job that calls `helm` installs `HELM_VERSION`, and `kubectl` is the
+cluster's version rather than the kind action's default, which had already
+moved a minor ahead of it.
+
+ingress-nginx is pinned to `controller-v1.15.1`, its final release: the project
+was retired in March 2026 and its repository is archived. It stays because the
+preview-URL job tests the chart's `Ingress` against a real controller and that
+controller is still the most common one; it is pinned to the last version with
+security fixes rather than to the one from 2024 it was on.
 
 ## Local equivalence
 

@@ -36,7 +36,7 @@ permissions:
 jobs:
   prune:
     name: Prune ${{ matrix.component }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     strategy:
       # Not fail-fast: one image failing to prune is no reason to leave the
