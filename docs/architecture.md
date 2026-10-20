@@ -36,7 +36,7 @@ flowchart TB
         AUTH[auth-service<br/>1 replica · SQLite]
         NOTES[notes-service<br/>1 replica · SQLite]
         JOB[Indexed Job<br/>4 shard pods]
-        MINIO[(MinIO<br/>results bucket)]
+        STORE[(versitygw<br/>results bucket)]
         AGG[aggregator Job]
     end
 
@@ -47,14 +47,14 @@ flowchart TB
     end
 
     PR --> VERIFY --> BUILD --> KIND --> HELM
-    HELM --> GW & AUTH & NOTES & JOB & MINIO
+    HELM --> GW & AUTH & NOTES & JOB & STORE
     GW --> AUTH & NOTES
     NOTES -->|verifies each token| AUTH
     JOB -->|HTTP| GW
-    JOB -->|uploads shard-N/| MINIO
-    MINIO -->|downloads the run| AGG
-    AGG -->|uploads merged/| MINIO
-    MINIO -->|fetch-results.sh| REPORT
+    JOB -->|uploads shard-N/| STORE
+    STORE -->|downloads the run| AGG
+    AGG -->|uploads merged/| STORE
+    STORE -->|fetch-results.sh| REPORT
     REPORT --> DOWN --> PROVE
 ```
 
@@ -142,12 +142,12 @@ real, it simply describes one machine.
 With object storage, on the same cluster:
 
 ```
-shards-r1-0  worker2     shards-r1-2  worker2
-shards-r1-1  worker      shards-r1-3  worker
-minio        worker
+shards-r1-0  worker2     shards-r1-2  worker
+shards-r1-1  worker2     shards-r1-3  worker
+object-store worker
 ```
 
-Both workers used, with shards 0 and 2 reading and writing storage that lives on
+Both workers used, with shards 0 and 1 reading and writing storage that lives on
 the other node — over a Service, which constrains nothing about scheduling.
 
 **Possible is not the same as guaranteed**, and for a while this project had only
@@ -160,13 +160,14 @@ shard Job therefore carries its own `topologySpreadConstraints`
 (`maxSkew: 1` over `kubernetes.io/hostname`, `DoNotSchedule`), and CI asserts on
 every pull request that the pods covered every node that could have taken one.
 
-An environment brings its own MinIO (one replica, `emptyDir` — the results die
-with the namespace, so there is nothing to persist), or is pointed at a real
-bucket with `tests.results.s3.endpoint`. The chart refuses to render with
+An environment brings its own object store — versitygw, one replica, `emptyDir`;
+the results die with the namespace, so there is nothing to persist — or is
+pointed at a real bucket with `tests.results.s3.endpoint`. The chart refuses to render with
 neither.
 
 See [ADR 0007](adr/0007-object-storage-for-shard-results.md) for the decision and
-what it costs.
+what it costs, and [ADR 0011](adr/0011-versitygw-replaces-minio.md) for why the
+server is not MinIO.
 
 ## Ordering between Jobs
 
@@ -213,9 +214,9 @@ should see in any Kubernetes work:
 `networkPolicy.enabled` ships a default-deny plus exactly the flows the stack
 needs: DNS, ingress to the gateway (from the ingress controller too, when an
 Ingress is enabled), gateway to auth and notes, notes to auth, the shard pods to
-the gateway, auth, notes and MinIO, the aggregator to MinIO and the Kubernetes
-API, the teardown Job to the Kubernetes API, and — with the Postgres backend —
-the services and the migration Job to Postgres. It is on by default. Whether it
+the gateway, auth, notes and the object store, the aggregator to the object
+store and the Kubernetes API, the teardown Job to the Kubernetes API, and — with
+the Postgres backend — the services and the migration Job to Postgres. It is on by default. Whether it
 does anything depends on the CNI. kindnet, kind's default, enforces it from the
 v1.36 node images the pipeline pins, so every CI environment runs with its
 traffic policed; before that it ignored NetworkPolicy and the rules were rendered
@@ -258,7 +259,7 @@ checked, not as a list of things that were.
 |---|---|---|
 | Cluster | Created and destroyed per run | Long-lived; the *namespace* is the ephemeral unit |
 | Images | `kind load docker-image` | Pulled from a registry; needs `imagePullSecrets` or IRSA/Workload Identity |
-| Result storage | MinIO in the namespace | A bucket, and credentials that are not generated per release |
+| Result storage | versitygw in the namespace | A bucket, and credentials that are not generated per release |
 | Ingress | Off by default; a hostname when it is on | The same `Ingress`, plus DNS, TLS and a decision about who may reach it |
 | Storage class | `local-path`, provisioned instantly | A real class, with latency the readiness gates have never had to tolerate |
 | Cleanup | `kind delete cluster` removes everything | The namespace TTL becomes load-bearing — see [cost-and-cleanup.md](cost-and-cleanup.md) |
@@ -277,4 +278,4 @@ is left above is what a provider would genuinely add.
 - [Cost and cleanup](cost-and-cleanup.md) — the teardown guarantees, stated precisely
 - [CI pipeline](ci-pipeline.md) — a step-by-step walk through the workflow
 - [Local development](local-development.md) — running everything without a cluster
-- [Architecture decisions](adr/) — the ten decisions worth arguing about
+- [Architecture decisions](adr/) — the eleven decisions worth arguing about

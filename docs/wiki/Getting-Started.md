@@ -43,22 +43,22 @@ Five phases, in order:
 
 ==> Waiting for the application to become ready
     ✓ all deployments available
-NAME                                     READY   STATUS
-demo-test-env-aggregate-r1-lmrl5         0/1     Init:0/1
-demo-test-env-auth-7fb8ff9b56-f59fz      1/1     Running
-demo-test-env-gateway-6c6d586696-48b2c   1/1     Running
-demo-test-env-gateway-6c6d586696-k4s5f   1/1     Running
-demo-test-env-minio-547cbb758d-5b7s2     1/1     Running
-demo-test-env-notes-78cf55b7f-5w4fn      1/1     Running
-demo-test-env-shards-r1-0-t9llt          1/1     Running
-demo-test-env-shards-r1-1-rjd7w          1/1     Running
-demo-test-env-shards-r1-2-86cpj          1/1     Running
-demo-test-env-shards-r1-3-5j96s          1/1     Running
+NAME                                          READY   STATUS
+demo-test-env-aggregate-r1-rlqjz              0/1     Init:0/1
+demo-test-env-auth-654497d4d6-8stjv           1/1     Running
+demo-test-env-gateway-85d7988b-cp7ww          1/1     Running
+demo-test-env-gateway-85d7988b-rhznk          1/1     Running
+demo-test-env-notes-867847d55f-tx9hs          1/1     Running
+demo-test-env-object-store-5f85b8bcb8-7d7pd   1/1     Running
+demo-test-env-shards-r1-0-htzkn               1/1     Running
+demo-test-env-shards-r1-1-7dmlc               1/1     Running
+demo-test-env-shards-r1-2-fm7k5               1/1     Running
+demo-test-env-shards-r1-3-vjlmp               1/1     Running
 ```
 
-Four shard pods from **one** Job object, each running a different slice. MinIO
-holds their results until the aggregator — still in its init container, waiting
-for the shard Job to finish — merges them.
+Four shard pods from **one** Job object, each running a different slice. The
+object store holds their results until the aggregator — still in its init
+container, waiting for the shard Job to finish — merges them.
 
 **3. The run**
 
@@ -145,7 +145,7 @@ Clean up afterwards:
 ```bash
 npm --prefix scripts install
 npm run shard:plan          # prints the plan for 4 shards
-npm run test:unit           # 210 unit tests
+npm run test:unit           # 213 unit tests
 ```
 
 **Just the application**, under docker compose:

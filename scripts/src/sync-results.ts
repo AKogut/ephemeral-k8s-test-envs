@@ -34,11 +34,13 @@ Configured entirely by environment:
   RESULTS_S3_ENDPOINT, RESULTS_S3_BUCKET,
   RESULTS_S3_ACCESS_KEY_ID, RESULTS_S3_SECRET_ACCESS_KEY,
   RESULTS_S3_REGION            (default us-east-1)
-  RESULTS_S3_FORCE_PATH_STYLE  (default true, for MinIO)
+  RESULTS_S3_FORCE_PATH_STYLE  (default true, for the in-cluster store)
 
 Exits 3 when those are absent, so a caller can fall back to a shared volume
 without having to distinguish "not configured" from "failed".
 `.trim();
+
+const STORAGE_READY_TIMEOUT_MS = 120_000;
 
 function humanBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -76,9 +78,13 @@ async function main(): Promise<number> {
     return 1;
   }
 
-  // Against the MinIO an environment brings with it, the bucket does not exist
-  // until something makes it. Against a real bucket the credentials usually
-  // cannot create one and do not need to — hence an opt-in rather than always.
+  const waitedMs = await client.waitUntilReachable(STORAGE_READY_TIMEOUT_MS);
+  if (waitedMs >= 1000) log(`object storage answered after ${waitedMs}ms`);
+
+  // Against the object store an environment brings with it, the bucket does not
+  // exist until something makes it. Against a real bucket the credentials
+  // usually cannot create one and do not need to — hence an opt-in rather than
+  // always.
   if ((env.RESULTS_S3_CREATE_BUCKET ?? 'false') === 'true') {
     log(`bucket: ${await client.ensureBucket()}`);
   }

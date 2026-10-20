@@ -1,6 +1,6 @@
 # Design decisions
 
-Ten decisions where someone could reasonably have chosen otherwise. Each is
+Eleven decisions where someone could reasonably have chosen otherwise. Each is
 recorded as an ADR in the repository, with context, rationale, consequences in
 **both** directions, and the alternatives that were rejected.
 
@@ -18,6 +18,7 @@ Without these, a deliberate trade-off is indistinguishable from an oversight.
 | [0008](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/docs/adr/0008-networked-database-mode.md) | A Postgres mode beside SQLite, selected by name | Two store implementations that can drift; CI runs the suite against both |
 | [0009](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/docs/adr/0009-reference-implementation-not-a-platform.md) | A reference implementation, not a package | Adopting the pattern means copying and adapting, with no upgrade path |
 | [0010](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/docs/adr/0010-nothing-here-costs-money-to-run.md) | Nothing here costs money to run | "No provider dependency" stays an argument, and the preview URL has never served a person |
+| [0011](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/docs/adr/0011-versitygw-replaces-minio.md) | The object store is versitygw, because MinIO stopped shipping images | A far less widely known server stands where the obvious one used to |
 
 ## The shape used
 

@@ -132,11 +132,11 @@ it hit `activeDeadlineSeconds`.
 
 ## `fetch-results.sh` downloads nothing
 
-It port-forwards MinIO and reads the bucket, so the first question is whether
+It port-forwards the object store and reads the bucket, so the first question is whether
 anything was written to it:
 
 ```bash
-kubectl -n $NS get pods -l app.kubernetes.io/component=minio
+kubectl -n $NS get pods -l app.kubernetes.io/component=object-store
 kubectl -n $NS logs job/${RELEASE}-test-env-aggregate-r1 --tail=20
 ```
 

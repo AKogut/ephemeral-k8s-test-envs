@@ -8,11 +8,12 @@
  * what this closes.
  *
  * Skipped unless RESULTS_S3_ENDPOINT is set, so `npm test` stays a
- * no-dependencies command. CI provides MinIO; locally:
+ * no-dependencies command. CI provides the same server the chart deploys;
+ * locally:
  *
- *   docker run -d --name minio -p 19000:9000 \
- *     -e MINIO_ROOT_USER=testkey -e MINIO_ROOT_PASSWORD=testsecret123 \
- *     quay.io/minio/minio server /data
+ *   docker run -d --name object-store -p 19000:9000 \
+ *     -e ROOT_ACCESS_KEY=testkey -e ROOT_SECRET_KEY=testsecret123 \
+ *     ghcr.io/versity/versitygw:v1.9.0 --port :9000 posix /data
  *
  *   RESULTS_S3_ENDPOINT=http://127.0.0.1:19000 RESULTS_S3_BUCKET=results \
  *   RESULTS_S3_ACCESS_KEY_ID=testkey RESULTS_S3_SECRET_ACCESS_KEY=testsecret123 \
@@ -31,7 +32,7 @@ const configured = Boolean(process.env.RESULTS_S3_ENDPOINT && process.env.RESULT
 
 /**
  * A skipped suite reports "tests 0, pass 0, skipped 0" — indistinguishable from
- * a file that was never collected. That is fine on a laptop with no MinIO, and
+ * a file that was never collected. That is fine on a laptop with no server, and
  * not fine in CI, where it would mean the live tests quietly stopped running
  * and nobody noticed for months.
  *
@@ -42,7 +43,7 @@ describe('live S3 coverage', () => {
     if (process.env.CI && !configured) {
       assert.fail(
         'RESULTS_S3_ENDPOINT and RESULTS_S3_BUCKET are unset in CI, so the live S3 tests did not run. ' +
-          'Start the MinIO service container or remove this guard deliberately.',
+          'Start the object store container or remove this guard deliberately.',
       );
     }
     assert.ok(true, configured ? 'live tests enabled' : 'skipped locally, which is allowed');
@@ -136,7 +137,7 @@ describe('S3 client against a live server', { skip: configured ? false : 'RESULT
   });
 
   it('pages through a listing larger than one response', async () => {
-    // MinIO and S3 both cap a page at 1000 keys. Writing that many here would
+    // S3 and the in-cluster store both cap a page at 1000 keys. Writing that many here would
     // be slow, so this asserts the loop terminates and returns everything for a
     // set big enough to be real.
     const many = 25;

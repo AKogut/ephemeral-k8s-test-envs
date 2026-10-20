@@ -1,6 +1,6 @@
 # ADR 0007 — Shard results go to object storage, and the shared volume is removed
 
-**Status:** Accepted · **Date:** 2026-08-11 · **Supersedes part of** [ADR 0001](0001-namespace-per-environment.md)
+**Status:** Accepted · **Date:** 2026-08-11 · **Supersedes part of** [ADR 0001](0001-namespace-per-environment.md) · **Amended by** [ADR 0011](0011-versitygw-replaces-minio.md)
 
 ## Context
 
@@ -45,6 +45,8 @@ the run, merges it exactly as before, and uploads the merged report back.
 An environment brings its own MinIO — one replica, `emptyDir`, no
 PersistentVolume — or is pointed at a real bucket with
 `tests.results.s3.endpoint`. The chart refuses to render with neither.
+*MinIO stopped publishing images, and since [ADR 0011](0011-versitygw-replaces-minio.md)
+the server is versitygw; the rest of this decision is unchanged.*
 
 **The `pvc` backend is removed rather than kept as an option.** So are
 `pvc-results.yaml`, `pod-results-exporter.yaml`, and the `tests.results`

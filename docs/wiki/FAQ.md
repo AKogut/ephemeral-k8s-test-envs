@@ -181,7 +181,7 @@ never been run on a managed cluster, for the reason given
 |---|---|---|
 | Cluster | created per run | long-lived; the *namespace* is the ephemeral unit |
 | Images | `kind load` | pulled from a registry with credentials |
-| Results | object storage, in-cluster MinIO | the same client, pointed at a real bucket |
+| Results | object storage, in-cluster versitygw | the same client, pointed at a real bucket |
 | Ingress | in the chart, off by default | on, with DNS, TLS and a decision about who may reach it |
 
 And the teardown story stops being a tidiness concern and starts being a billing

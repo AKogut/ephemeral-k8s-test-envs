@@ -53,7 +53,7 @@ flowchart LR
     B --> D[helm install<br/>namespace pr-N]
     D --> E[gateway · auth · notes<br/>3 deployments, 4 pods]
     D --> S[Indexed Job<br/>4 shard pods]
-    D --> M[(MinIO<br/>results bucket)]
+    D --> M[(versitygw<br/>results bucket)]
     E <--> S
     S -->|uploads shard-N/| M
     M --> A[aggregator Job]
@@ -274,10 +274,10 @@ app/
   notes-service/    Notes CRUD — per-owner scoping, upstream token verification
   gateway/          Reverse proxy — hand-rolled on fetch, zero proxy dependencies
 tests/api/          105 Playwright API tests + the shard entrypoint
-scripts/            shard planner · result merge · k8s + S3 + zip clients (210 unit tests)
+scripts/            shard planner · result merge · k8s + S3 + zip clients (213 unit tests)
                     local-demo.sh · fetch-results.sh · verify-teardown.sh
 charts/test-env/    The Helm chart — one isolated environment per release
-docs/               architecture · sharding · cost-and-cleanup · ci-pipeline · 10 ADRs
+docs/               architecture · sharding · cost-and-cleanup · ci-pipeline · 11 ADRs
 .github/workflows/  ci: check → package → 5 cluster jobs, each proving one guarantee
                     fleet: weekly, reads run history · publish-wiki: on merge
 ```
@@ -290,7 +290,7 @@ docs/               architecture · sharding · cost-and-cleanup · ci-pipeline 
 ./scripts/local-demo.sh --shards 8   # …with 8 shards
 ./scripts/local-demo.sh --no-tests   # just the environment
 
-npm run test:unit                    # 210 unit tests, no cluster needed
+npm run test:unit                    # 213 unit tests, no cluster needed
 npm run shard:plan                   # print the plan the pods will compute
 npm run lint                         # ESLint, type-aware, all five packages
 npm run typecheck                    # tsc across all five packages
@@ -332,7 +332,7 @@ force pushes, no deletions. Board:
 | [Cost and cleanup](docs/cost-and-cleanup.md) | The three teardown layers and what each one misses |
 | [CI pipeline](docs/ci-pipeline.md) | The workflow, step by step |
 | [Local development](docs/local-development.md) | Three ways to run it; full config reference |
-| [ADRs](docs/adr/) | The ten decisions worth arguing about |
+| [ADRs](docs/adr/) | The eleven decisions worth arguing about |
 
 Runbooks, an FAQ and longer-form background live in the
 [wiki](https://github.com/AKogut/ephemeral-k8s-test-envs/wiki).

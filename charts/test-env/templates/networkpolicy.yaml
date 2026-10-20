@@ -23,7 +23,7 @@ complete is useless if the sender's egress is denied.
 {{- $notes := include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.notes.component) -}}
 {{- $tests := include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.tests.component) -}}
 {{- $aggregator := include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.aggregator.component) -}}
-{{- $minio := include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.minio.component) -}}
+{{- $objectStore := include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.objectStore.component) -}}
 {{- $postgres := include "test-env.componentSelectorLabels" (dict "context" . "component" "postgres") -}}
 {{- $migrate := include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.database.migrations.component) -}}
 apiVersion: networking.k8s.io/v1
@@ -282,27 +282,27 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.notes.port }}
-{{- if .Values.minio.enabled }}
+{{- if .Values.objectStore.enabled }}
     - to:
         - podSelector:
             matchLabels:
-              {{- $minio | nindent 14 }}
+              {{- $objectStore | nindent 14 }}
       ports:
         - protocol: TCP
           port: 9000
 {{- end }}
-{{- if .Values.minio.enabled }}
+{{- if .Values.objectStore.enabled }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "test-env.fullname" . }}-minio
+  name: {{ include "test-env.fullname" . }}-object-store
   labels:
     {{- include "test-env.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
-      {{- $minio | nindent 6 }}
+      {{- $objectStore | nindent 6 }}
   policyTypes:
     - Ingress
   ingress:
@@ -357,11 +357,11 @@ spec:
           port: 443
         - protocol: TCP
           port: 6443
-{{- if and .Values.tests.enabled .Values.minio.enabled }}
+{{- if and .Values.tests.enabled .Values.objectStore.enabled }}
     - to:
         - podSelector:
             matchLabels:
-              {{- $minio | nindent 14 }}
+              {{- $objectStore | nindent 14 }}
       ports:
         - protocol: TCP
           port: 9000

@@ -1,4 +1,4 @@
-{{- if and .Values.tests.enabled .Values.minio.enabled }}
+{{- if and .Values.tests.enabled .Values.objectStore.enabled }}
 {{/*
 Object storage for this environment's results.
 
@@ -15,23 +15,23 @@ what lets the shard Job spread across a cluster.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "test-env.minioServiceName" . }}
+  name: {{ include "test-env.objectStoreServiceName" . }}
   labels:
-    {{- include "test-env.componentLabels" (dict "context" . "component" .Values.minio.component) | nindent 4 }}
+    {{- include "test-env.componentLabels" (dict "context" . "component" .Values.objectStore.component) | nindent 4 }}
 spec:
   replicas: 1
   strategy:
-    # Recreate rather than RollingUpdate: two MinIO pods would each have their
-    # own emptyDir, and a shard uploading to one while the aggregator reads the
-    # other is a race that looks like missing results.
+    # Recreate rather than RollingUpdate: two of these pods would each have
+    # their own emptyDir, and a shard uploading to one while the aggregator reads
+    # the other is a race that looks like missing results.
     type: Recreate
   selector:
     matchLabels:
-      {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.minio.component) | nindent 6 }}
+      {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.objectStore.component) | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "test-env.componentLabels" (dict "context" . "component" .Values.minio.component) | nindent 8 }}
+        {{- include "test-env.componentLabels" (dict "context" . "component" .Values.objectStore.component) | nindent 8 }}
       annotations:
         # Rolls the pod when the credentials change, so it never keeps serving
         # with keys the clients have stopped using.
@@ -46,62 +46,58 @@ spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
-        - name: minio
-          image: "{{ .Values.minio.image.repository }}:{{ .Values.minio.image.tag }}"
-          imagePullPolicy: {{ .Values.minio.image.pullPolicy }}
+        - name: object-store
+          image: "{{ .Values.objectStore.image.repository }}:{{ .Values.objectStore.image.tag }}"
+          imagePullPolicy: {{ .Values.objectStore.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
-          args: ["server", "/data", "--address", ":9000"]
+          args: ["--port", ":9000", "--health", "/health", "posix", "/data"]
           env:
-            - name: MINIO_ROOT_USER
+            - name: ROOT_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ include "test-env.s3SecretName" . }}
                   key: access-key-id
-            - name: MINIO_ROOT_PASSWORD
+            - name: ROOT_SECRET_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ include "test-env.s3SecretName" . }}
                   key: secret-access-key
-            # Nothing browses this; turning the console off keeps the pod to one
-            # listening port and one thing to reason about.
-            - name: MINIO_BROWSER
-              value: "off"
           ports:
             - name: s3
               containerPort: 9000
           readinessProbe:
             httpGet:
-              path: /minio/health/ready
+              path: /health
               port: s3
             initialDelaySeconds: 2
             periodSeconds: 3
           livenessProbe:
             httpGet:
-              path: /minio/health/live
+              path: /health
               port: s3
             initialDelaySeconds: 5
             periodSeconds: 10
           resources:
-            {{- toYaml .Values.minio.resources | nindent 12 }}
+            {{- toYaml .Values.objectStore.resources | nindent 12 }}
           volumeMounts:
             - name: data
               mountPath: /data
       volumes:
         - name: data
           emptyDir:
-            sizeLimit: {{ .Values.minio.storage.sizeLimit }}
+            sizeLimit: {{ .Values.objectStore.storage.sizeLimit }}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "test-env.minioServiceName" . }}
+  name: {{ include "test-env.objectStoreServiceName" . }}
   labels:
-    {{- include "test-env.componentLabels" (dict "context" . "component" .Values.minio.component) | nindent 4 }}
+    {{- include "test-env.componentLabels" (dict "context" . "component" .Values.objectStore.component) | nindent 4 }}
 spec:
   type: ClusterIP
   selector:
-    {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.minio.component) | nindent 4 }}
+    {{- include "test-env.componentSelectorLabels" (dict "context" . "component" .Values.objectStore.component) | nindent 4 }}
   ports:
     - name: s3
       port: 9000

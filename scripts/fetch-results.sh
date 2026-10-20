@@ -33,17 +33,17 @@ done
 [[ -n "$NAMESPACE" ]] || { echo "--namespace is required" >&2; exit 2; }
 
 S3_SECRET="${RELEASE}-test-env-s3"
-MINIO_SVC="${RELEASE}-test-env-minio"
+OBJECT_STORE_SVC="${RELEASE}-test-env-object-store"
 
-info "results are in object storage; forwarding $MINIO_SVC"
+info "results are in object storage; forwarding $OBJECT_STORE_SVC"
 
 PORT="${S3_LOCAL_PORT:-19000}"
-kubectl -n "$NAMESPACE" port-forward "svc/$MINIO_SVC" "$PORT:9000" >/dev/null 2>&1 &
+kubectl -n "$NAMESPACE" port-forward "svc/$OBJECT_STORE_SVC" "$PORT:9000" >/dev/null 2>&1 &
 FORWARD_PID=$!
 trap 'kill "$FORWARD_PID" 2>/dev/null || true' EXIT
 
 for _ in $(seq 1 30); do
-  curl -sf "http://127.0.0.1:$PORT/minio/health/live" >/dev/null 2>&1 && break
+  curl -sf "http://127.0.0.1:$PORT/health" >/dev/null 2>&1 && break
   sleep 1
 done
 

@@ -54,7 +54,7 @@ env:
   CAN_WRITE: ${{ !inputs.simulate_fork && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
   # Pinned rather than :latest — a storage backend that changes under the tests
   # would turn a real regression and an upstream change into the same red build.
-  MINIO_IMAGE: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+  OBJECT_STORE_IMAGE: ghcr.io/versity/versitygw:v1.9.0
   # Pinned for the same reason: a CNI that changes under the policy tests would
   # make an upstream change and a real regression look identical.
   CALICO_MANIFEST: https://raw.githubusercontent.com/projectcalico/calico/v3.29.1/manifests/calico.yaml
@@ -154,7 +154,7 @@ jobs:
           # Testing that a chart renders is easy. Testing that it *refuses* to
           # render nonsense is what catches a guard that quietly stopped guarding.
           for bad in "tests.shards=0" "tests.shards=999" "notes.authMode=nope" "notes.authMode=" \
-                     "minio.enabled=false" "tests.results.s3.bucket=" \
+                     "objectStore.enabled=false" "tests.results.s3.bucket=" \
                      "tests.spread.whenUnsatisfiable=Sometimes" "tests.spread.maxSkew=0" \
                      "database.backend=mysql" "gateway.ingress.enabled=true"; do
             if helm template ci charts/test-env --set "$bad" >/dev/null 2>&1; then
@@ -193,24 +193,24 @@ jobs:
       - name: Typecheck
         run: npm --prefix scripts run typecheck
 
-      - name: Start MinIO for the live storage tests
+      - name: Start the object store for the live storage tests
         run: |
-          # Started here rather than as a `services:` container because MinIO
-          # needs a command argument (`server /data`) and service containers
-          # cannot override one.
-          docker run -d --name minio -p 9000:9000 \
-            -e MINIO_ROOT_USER=testkey \
-            -e MINIO_ROOT_PASSWORD=testsecret123 \
-            "$MINIO_IMAGE" server /data
+          # Started here rather than as a `services:` container because the
+          # server needs command arguments and service containers cannot
+          # override them.
+          docker run -d --name object-store -p 9000:9000 \
+            -e ROOT_ACCESS_KEY=testkey \
+            -e ROOT_SECRET_KEY=testsecret123 \
+            "$OBJECT_STORE_IMAGE" --port :9000 --health /health posix /data
 
           for _ in $(seq 1 60); do
-            if curl -sf http://127.0.0.1:9000/minio/health/live >/dev/null; then
-              echo "MinIO is live"; exit 0
+            if curl -sf http://127.0.0.1:9000/health >/dev/null; then
+              echo "the object store is live"; exit 0
             fi
             sleep 1
           done
-          echo "::error::MinIO did not become healthy"
-          docker logs minio
+          echo "::error::the object store did not become healthy"
+          docker logs object-store
           exit 1
 
       - name: Unit tests with coverage
@@ -218,7 +218,7 @@ jobs:
           # The signature layer is checked against AWS's published vectors, but
           # only a real server catches what a stub cannot: a header it insists
           # on, a listing that pages differently, an encoding it rejects. The
-          # suite refuses to skip these when CI is set, so a missing MinIO is a
+          # suite refuses to skip these when CI is set, so a missing server is a
           # red build rather than silence.
           RESULTS_S3_ENDPOINT: http://127.0.0.1:9000
           RESULTS_S3_BUCKET: results
@@ -1009,8 +1009,8 @@ jobs:
           kubectl -n "$NS" wait --for=condition=ready pod/intruder --timeout=120s
 
           blocked=0
-          for target in netpol-test-env-auth:3001 netpol-test-env-notes:3002 netpol-test-env-minio:9000; do
-            if kubectl -n "$NS" exec intruder -- timeout 6 wget -q -O- -T 5 "http://$target/healthz" >/dev/null 2>&1; then
+          for target in netpol-test-env-auth:3001/healthz netpol-test-env-notes:3002/healthz netpol-test-env-object-store:9000/health; do
+            if kubectl -n "$NS" exec intruder -- timeout 6 wget -q -O- -T 5 "http://$target" >/dev/null 2>&1; then
               echo "::error::$target was reachable from an unlabelled pod"
             else
               echo "blocked: $target"
@@ -1029,15 +1029,15 @@ jobs:
           sleep 5
 
           reachable=0
-          for target in netpol-test-env-auth:3001 netpol-test-env-notes:3002; do
-            if kubectl -n "$NS" exec intruder -- timeout 6 wget -q -O- -T 5 "http://$target/healthz" >/dev/null 2>&1; then
+          for target in netpol-test-env-auth:3001/healthz netpol-test-env-notes:3002/healthz netpol-test-env-object-store:9000/health; do
+            if kubectl -n "$NS" exec intruder -- timeout 6 wget -q -O- -T 5 "http://$target" >/dev/null 2>&1; then
               echo "reachable without the policy: $target"
               reachable=$((reachable + 1))
             else
               echo "::error::$target unreachable even with no policy — the negative test proves nothing"
             fi
           done
-          [ "$reachable" = "2" ] || exit 1
+          [ "$reachable" = "3" ] || exit 1
 
       - name: Delete the cluster
         if: always()
@@ -1117,7 +1117,7 @@ jobs:
             --set "image.pullPolicy=Never" \
             --set "tests.enabled=false" \
             --set "aggregator.enabled=false" \
-            --set "minio.enabled=false" \
+            --set "objectStore.enabled=false" \
             --set "gateway.ingress.enabled=true" \
             --set "gateway.ingress.domain=${DOMAIN}" \
             --wait --timeout 6m
@@ -1249,7 +1249,7 @@ jobs:
                   --set "image.pullPolicy=Never"
                   --set "tests.enabled=false"
                   --set "aggregator.enabled=false"
-                  --set "minio.enabled=false")
+                  --set "objectStore.enabled=false")
 
           helm install doomed ./charts/test-env --namespace doomed --create-namespace \
             "${common[@]}" \

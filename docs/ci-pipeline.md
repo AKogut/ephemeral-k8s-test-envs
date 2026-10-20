@@ -44,7 +44,7 @@ script does not wait behind a coverage run, and the run page names what broke.
 | `Typecheck and build` | Type errors, and a build that no longer compiles |
 | `API suite typecheck` | The same, for the Playwright suite |
 | `Shell scripts` | `shellcheck` — shell bugs are otherwise found in production |
-| `Shard planner` | 210 unit tests, **gated** at 99% lines / 94% branches / 100% functions, with MinIO alongside so the storage client is tested against a real endpoint; then asserts the plan covers every spec file exactly once |
+| `Shard planner` | 213 unit tests, **gated** at 99% lines / 94% branches / 100% functions, with versitygw alongside so the storage client is tested against a real endpoint; then asserts the plan covers every spec file exactly once |
 | `Helm chart` | Lint with both value sets; render at 1, 2, 4, 8, 16 shards; the quota tracks the shard count; no shared volume survives anywhere in the chart; invalid values are **rejected**; security defaults are actually applied |
 | `Build <service> image` ×3 | The image builds, is scanned, and starts, serves and shuts down cleanly |
 | `Build the test runner image` | The planner works *inside* the image, and no browsers came with it |

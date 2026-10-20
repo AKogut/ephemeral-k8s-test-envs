@@ -69,8 +69,8 @@ the teardown verification added in Phase 4 check them independently.
   and `helm upgrade`.
 - Results survive `helm uninstall` long enough to be copied out. *No longer true
   since [ADR 0007](0007-object-storage-for-shard-results.md): results live in an
-  in-release MinIO on an `emptyDir`, go with `helm uninstall`, and CI copies them
-  out before teardown starts.*
+  in-release object store on an `emptyDir`, go with `helm uninstall`, and CI
+  copies them out before teardown starts.*
 
 **Bad**
 
