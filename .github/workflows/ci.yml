@@ -1105,22 +1105,24 @@ jobs:
 
           # Then wait for the thing that actually refused the connection.
           # ingress-nginx registers a validating webhook, so *creating* an
-          # Ingress calls back into the controller — and a rolled-out
-          # Deployment is not the same as an admission endpoint with
-          # addresses. Helm fails the entire install on the difference:
+          # Ingress calls back into the controller — and neither a rolled-out
+          # Deployment nor an admission endpoint with an address is the same as
+          # a webhook that answers. Helm fails the entire install on the
+          # difference:
           #
           #   failed calling webhook "validate.nginx.ingress.kubernetes.io":
           #   dial tcp …:443: connect: connection refused
-          addresses=""
+          answered=0
           for _ in $(seq 1 60); do
-            addresses=$(kubectl -n ingress-nginx get endpointslices \
-              -l kubernetes.io/service-name=ingress-nginx-controller-admission \
-              -o jsonpath='{.items[*].endpoints[*].addresses[*]}' 2>/dev/null || true)
-            [ -n "$addresses" ] && break
+            if kubectl -n default create ingress webhook-probe --class=nginx \
+                --rule="probe.invalid/*=probe:80" --dry-run=server -o name >/dev/null 2>&1; then
+              answered=1
+              break
+            fi
             sleep 2
           done
-          [ -n "$addresses" ] || { echo "::error::the admission webhook never got an endpoint"; exit 1; }
-          echo "admission webhook is answering at: $addresses"
+          [ "$answered" = "1" ] || { echo "::error::the admission webhook never answered"; exit 1; }
+          echo "the admission webhook answers"
 
       - name: Install the environment with a hostname
         run: |
@@ -1399,8 +1401,10 @@ jobs:
             | grep -m1 -oE 'image: "postgres:[^"]+"' | cut -d'"' -f2)
           [ -n "$ref" ] || { echo "::error::could not read the Postgres image from the chart"; exit 1; }
           echo "loading $ref"
-          docker pull -q "$ref"
-          kind load docker-image --name pgenv "$ref"
+          platform=$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}')
+          docker pull -q --platform "$platform" "$ref"
+          docker save --platform "$platform" -o /tmp/postgres.tar "$ref"
+          kind load image-archive --name pgenv /tmp/postgres.tar
 
       - name: Install with the database a network away, and two replicas each
         run: |
