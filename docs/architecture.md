@@ -237,14 +237,14 @@ The measured sizes are
 [in the README](../README.md#3-images-built-for-the-job-they-actually-do) and
 deliberately not repeated here — a table of numbers kept in two documents goes
 stale in one of them. Every run regenerates them: the `Report image size` step
-in each image-building job runs
-`docker image inspect --format '{{.Size}}'` and writes the result into the job
-summary.
+in each image-building job runs `docker save | gzip -c | wc -c`, the compressed
+size a node pulls, which reads the same on either Docker image store, and writes
+the result into the job summary.
 
 The `api-tests` image deserves a note of its own. The obvious base for a
 Playwright suite is `mcr.microsoft.com/playwright`, which ships Chromium, Firefox,
 WebKit and their system libraries. This suite never opens a browser — it speaks
-HTTP through Playwright's `request` fixture — so it is built on `node:22-slim`
+HTTP through Playwright's `request` fixture — so it is built on `node:26-trixie-slim`
 with `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`. Four shard pods pulling that image on a
 cold node is the difference between seconds and minutes.
 

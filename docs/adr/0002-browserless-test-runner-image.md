@@ -23,10 +23,10 @@ every PR.
 
 ## Decision
 
-Build the runner on `node:22-trixie-slim` with browser downloads suppressed:
+Build the runner on `node:26-trixie-slim` with browser downloads suppressed:
 
 ```dockerfile
-ARG NODE_VERSION=22.23.3
+ARG NODE_VERSION=26.12.0
 FROM node:${NODE_VERSION}-trixie-slim AS deps
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 RUN npm ci --no-audit --no-fund

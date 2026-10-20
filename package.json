@@ -10,7 +10,7 @@
     "url": "https://github.com/AKogut/ephemeral-k8s-test-envs.git"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=26"
   },
   "scripts": {
     "install:all": "npm --prefix app/auth-service install && npm --prefix app/notes-service install && npm --prefix app/gateway install && npm --prefix scripts install && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm --prefix tests/api install",

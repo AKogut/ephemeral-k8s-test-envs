@@ -11,7 +11,7 @@ Then the namespace is destroyed — and the pipeline proves it.**
 [![Kubernetes](https://img.shields.io/badge/kubernetes-1.37.0-326ce5?logo=kubernetes&logoColor=white)](https://kubernetes.io/)
 [![Helm](https://img.shields.io/badge/helm-v4-0f1689?logo=helm&logoColor=white)](https://helm.sh/)
 [![Playwright](https://img.shields.io/badge/playwright-API-2EAD33?logo=playwright&logoColor=white)](https://playwright.dev/)
-[![Node](https://img.shields.io/badge/node-22-5fa04e?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Node](https://img.shields.io/badge/node-26-5fa04e?logo=node.js&logoColor=white)](https://nodejs.org/)
 
 [Quick start](#quick-start) · [How it works](#what-actually-happens) ·
 [Docs](docs/) · [Wiki](https://github.com/AKogut/ephemeral-k8s-test-envs/wiki) ·
@@ -43,7 +43,7 @@ cd ephemeral-k8s-test-envs
 
 A `kind` cluster, five images, a namespace, 113 tests across 4 parallel pods, an
 aggregated report, and a verified teardown. **No cloud account, roughly three
-minutes.** Needs `docker`, `kind`, `kubectl`, `helm` and Node 22 with `npm`.
+minutes.** Needs `docker`, `kind`, `kubectl`, `helm` and Node 26 with `npm`.
 
 ## What actually happens
 
@@ -188,28 +188,32 @@ runtime), two for `aggregator` (compile, runtime), which has no production
 dependencies to install. The compiler, the type definitions and the native
 toolchain for `better-sqlite3` all stay in the discarded stages.
 
-| Image | Naive single-stage (`node:22`) | This repo (`node:22-slim`, multi-stage) | Reduction |
+| Image | Naive single-stage (`node:26`) | This repo (`node:26-trixie-slim`, multi-stage) | Reduction |
 |---|---:|---:|---:|
-| `auth-service` | 1.71 GB | **378 MB** | **78%** |
-| `gateway` | 1.67 GB | **351 MB** | **79%** |
-| `notes-service` | — | 378 MB | |
-| `api-tests` | — | 404 MB | |
-| `aggregator` | — | 346 MB | |
+| `auth-service` | 491 MB | **98 MB** | **80%** |
+| `gateway` | 455 MB | **85 MB** | **81%** |
+| `notes-service` | — | 98 MB | |
+| `api-tests` | — | 94 MB | |
+| `aggregator` | — | 85 MB | |
 
-<sub>Uncompressed image size as reported by <code>docker images</code>. Both
-columns use the same measurement, so the comparison is like-for-like.</sub>
+<sub>Compressed size on linux/amd64, which is what a node pulls:
+<code>docker save &lt;image&gt; | gzip -c | wc -c</code>, on the images CI built on 2026-10-20.
+The naive build is a single stage: <code>FROM node:26.12.0</code>, <code>npm ci</code>,
+<code>npm run build</code>. Both columns use the same measurement, and the
+<code>Report image size</code> step in CI prints it for every image on every run.</sub>
 
 None of the runtime images carries a package manager — every entrypoint is
-`node`, so npm and corepack are deleted from the final layer. That does not save
+`node`, so npm is deleted from the final layer (corepack no longer ships with
+Node since v25, so there is nothing of it to delete). That does not save
 a byte (the files live in the base layer; a later `rm` only writes a whiteout)
 but it is what takes the last fixable critical out of every scan, because npm
 vendors its own copy of `node-tar`.
 
 The test runner deserves its own note. The documented base for a Playwright suite
-is `mcr.microsoft.com/playwright` — **923 MB compressed**, because it ships
+is `mcr.microsoft.com/playwright` — **986 MB compressed** at v1.64.1, because it ships
 Chromium, Firefox and WebKit. This suite never opens a browser; it speaks HTTP
-through Playwright's `request` fixture. So the runner is built on `node:22-slim`
-(**79 MB compressed**) with `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`, and CI fails if
+through Playwright's `request` fixture. So the runner is built on `node:26-trixie-slim`
+(**94 MB compressed**) with `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`, and CI fails if
 browsers ever creep back in. That saving is multiplied by the shard count on every
 run.
 

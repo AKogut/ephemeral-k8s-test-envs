@@ -52,9 +52,9 @@ These are defaults worth copying:
 - **Images pinned to a digest-stable tag** and built from a slim base, with the
   build toolchain confined to discarded stages.
 - **No package manager in any runtime image.** Every entrypoint is `node`;
-  `node_modules` arrives prebuilt from an earlier stage. npm and corepack are
-  deleted from the final layer, which removes npm's vendored copy of `node-tar`
-  along with them.
+  `node_modules` arrives prebuilt from an earlier stage. npm is deleted from
+  the final layer, which removes its vendored copy of `node-tar` along with it.
+  Corepack has not shipped with Node since v25.
 
 ## Vulnerability scanning
 

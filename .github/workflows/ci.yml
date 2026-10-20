@@ -35,7 +35,7 @@ permissions:
   contents: read
 
 env:
-  NODE_VERSION: "22"
+  NODE_VERSION: "26"
   REGISTRY: ghcr.io
   # A pull request from a fork gets a read-only GITHUB_TOKEN however generous
   # the `permissions:` block is — deliberate on GitHub's part, and it cannot be
@@ -245,7 +245,7 @@ jobs:
             echo '### Unit test coverage'
             echo '```'
             sed -n '/start of coverage report/,/end of coverage report/p' /tmp/coverage.txt \
-              | sed 's/^# \{0,1\}//'
+              | sed -E 's/^(#|ℹ) ?//'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -384,8 +384,9 @@ jobs:
 
       - name: Report image size
         run: |
-          size=$(docker image inspect ${{ matrix.component }}:ci --format '{{.Size}}')
-          printf '| `%s` | %s MB |\n' "${{ matrix.component }}" "$((size / 1000000))" >> "$GITHUB_STEP_SUMMARY"
+          set -o pipefail
+          size=$(docker save ${{ matrix.component }}:ci | gzip -c | wc -c)
+          printf '| `%s` | %s MB compressed |\n' "${{ matrix.component }}" "$((size / 1000000))" >> "$GITHUB_STEP_SUMMARY"
 
       # Two passes over the image that was just built, and the difference between
       # them is the whole policy.
@@ -487,19 +488,20 @@ jobs:
 
       - name: Report image size
         run: |
-          # Note: `docker image inspect .Size` reports the uncompressed size on a
-          # standard Docker engine, but the content size when the containerd
-          # image store is enabled (as on recent Docker Desktop). Both are
-          # printed so the number in the docs is never ambiguous about which it
-          # is, and the guard below is set well above either reading.
-          size=$(docker image inspect api-tests:ci --format '{{.Size}}')
-          docker images api-tests --format '{{.Repository}}:{{.Tag}} {{.Size}}'
-          printf '| `api-tests` | %s MB |\n' "$((size / 1000000))" >> "$GITHUB_STEP_SUMMARY"
+          # `docker image inspect .Size` is the uncompressed size on the classic
+          # image store and the compressed size on the containerd store, which
+          # the ubuntu-26.04 runners use, and `docker history` reports nothing
+          # for a layer that has not been unpacked yet. `docker save` compressed
+          # is what a node pulls on either, so it is the number printed, the one
+          # the README quotes, and the one the guard below reads.
+          set -o pipefail
+          size=$(docker save api-tests:ci | gzip -c | wc -c)
+          printf '| `api-tests` | %s MB compressed |\n' "$((size / 1000000))" >> "$GITHUB_STEP_SUMMARY"
 
           # A browser-bearing Playwright base adds well over a gigabyte. This
           # guard is what stops that creeping back in unnoticed — see ADR 0002.
           if [ "$size" -gt 700000000 ]; then
-            echo "::error::api-tests image is $((size / 1000000)) MB — browsers may have crept back in"
+            echo "::error::api-tests image is $((size / 1000000)) MB compressed — browsers may have crept back in"
             exit 1
           fi
 
@@ -577,8 +579,9 @@ jobs:
 
       - name: Report image size
         run: |
-          size=$(docker image inspect aggregator:ci --format '{{.Size}}')
-          printf '| `aggregator` | %s MB |\n' "$((size / 1000000))" >> "$GITHUB_STEP_SUMMARY"
+          set -o pipefail
+          size=$(docker save aggregator:ci | gzip -c | wc -c)
+          printf '| `aggregator` | %s MB compressed |\n' "$((size / 1000000))" >> "$GITHUB_STEP_SUMMARY"
 
       # Same policy as the service images: record everything fixable, gate only
       # on fixable CRITICAL. This one carries no production dependencies at all,

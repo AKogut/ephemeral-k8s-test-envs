@@ -4,7 +4,7 @@
 # proxy is written against the runtime's own fetch, so express is the only
 # production dependency and no native module is involved.
 
-ARG NODE_VERSION=22.23.3
+ARG NODE_VERSION=26.12.0
 
 # ---------------------------------------------------------------- deps --------
 FROM node:${NODE_VERSION}-trixie-slim AS deps
@@ -52,8 +52,7 @@ COPY --chown=node:node package.json ./
 
 # The entrypoint is `node`; no package manager runs here. Dropping npm removes
 # its vendored node-tar, which is otherwise a permanent fixture of every scan.
-RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
-           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 USER node
 EXPOSE 3000
