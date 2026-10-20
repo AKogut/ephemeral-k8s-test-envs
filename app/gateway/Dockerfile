@@ -4,10 +4,10 @@
 # proxy is written against the runtime's own fetch, so express is the only
 # production dependency and no native module is involved.
 
-ARG NODE_VERSION=22.23.2
+ARG NODE_VERSION=22.23.3
 
 # ---------------------------------------------------------------- deps --------
-FROM node:${NODE_VERSION}-bookworm-slim AS deps
+FROM node:${NODE_VERSION}-trixie-slim AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json ./
@@ -26,7 +26,7 @@ COPY src ./src
 RUN npm run build
 
 # ------------------------------------------------------------- runtime --------
-FROM node:${NODE_VERSION}-bookworm-slim AS runtime
+FROM node:${NODE_VERSION}-trixie-slim AS runtime
 WORKDIR /app
 
 ARG SERVICE_VERSION=dev
