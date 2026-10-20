@@ -34,10 +34,10 @@ With the default values:
 
 | Kind | Count | Notes |
 |---|---:|---|
-| Deployment | 4 | gateway (2 replicas), auth-service, notes-service, MinIO for shard results |
+| Deployment | 4 | gateway (2 replicas), auth-service, notes-service, versitygw for shard results |
 | Service | 4 | ClusterIP, one per Deployment |
 | Job | 2 | The `Indexed` shard Job running the API suite, and the aggregator that merges its results |
-| Secret | 2 | JWT signing key and MinIO credentials, both generated per release |
+| Secret | 2 | JWT signing key and object store credentials, both generated per release |
 | ServiceAccount | 2 | The application's, with no permissions and no mounted token; the aggregator's |
 | Role + RoleBinding | 1 | The aggregator may `get` the one named shard Job |
 | NetworkPolicy | 8 | Default-deny plus the flows the stack needs |

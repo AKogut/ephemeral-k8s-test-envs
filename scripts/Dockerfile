@@ -7,10 +7,10 @@
 # It has no production dependencies at all — the merge is plain Node — so the
 # runtime stage carries nothing but compiled JavaScript on a slim base.
 
-ARG NODE_VERSION=22.23.2
+ARG NODE_VERSION=22.23.3
 
 # --------------------------------------------------------------- build --------
-FROM node:${NODE_VERSION}-bookworm-slim AS build
+FROM node:${NODE_VERSION}-trixie-slim AS build
 WORKDIR /build
 
 COPY package.json package-lock.json ./
@@ -22,7 +22,7 @@ COPY src ./src
 RUN npm run build
 
 # ------------------------------------------------------------- runtime --------
-FROM node:${NODE_VERSION}-bookworm-slim AS runtime
+FROM node:${NODE_VERSION}-trixie-slim AS runtime
 WORKDIR /app
 
 ARG SERVICE_VERSION=dev

@@ -47,7 +47,7 @@ The TTL controller deletes the Job and its pods once they finish. `activeDeadlin
 covers the opposite case: a suite that hangs is killed rather than holding the
 namespace open indefinitely.
 
-**What this does not cover:** the Deployments, the Services, MinIO, the Postgres
+**What this does not cover:** the Deployments, the Services, the object store, the Postgres
 StatefulSet and its volume claim when that backend is on, the namespace.
 A TTL on Jobs is pod hygiene, not environment cleanup. Relying on it alone is the
 most common way a "self-cleaning" setup quietly leaks.
@@ -221,7 +221,7 @@ One environment at the CI resource requests:
 | notes-service | 25m | 64Mi |
 | shard pods × 4 (transient) | 400m | 640Mi |
 | aggregator (transient) | 50m | 96Mi |
-| MinIO (results bucket) | 50m | 128Mi |
+| versitygw (results bucket) | 50m | 128Mi |
 | **Steady state after tests finish** | **150m** | **352Mi** |
 
 Those are requests. What an environment is *permitted* to take is a separate
@@ -255,7 +255,7 @@ environments is 4.5 vCPU and 10.3 GB of memory reserved permanently, for code
 that no longer exists on any branch.
 
 Object storage made this worse, not better, and that is worth stating plainly:
-MinIO is a pod that keeps running after the tests finish, where the results
+the object store is a pod that keeps running after the tests finish, where the results
 volume was only disk. A leaked environment now costs half again as much CPU. It
 buys the shards the ability to run on any node
 ([ADR 0007](adr/0007-object-storage-for-shard-results.md)), and it makes teardown

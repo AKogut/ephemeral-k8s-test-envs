@@ -253,8 +253,8 @@ or a `/` in it would end the URL somewhere other than where it means to.
 {{- printf "%s-migrate-%s-r%d" (include "test-env.fullname" .context) .database (int .context.Release.Revision) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "test-env.minioServiceName" -}}
-{{- printf "%s-minio" (include "test-env.fullname" .) -}}
+{{- define "test-env.objectStoreServiceName" -}}
+{{- printf "%s-object-store" (include "test-env.fullname" .) -}}
 {{- end -}}
 
 {{- define "test-env.s3SecretName" -}}
@@ -265,13 +265,13 @@ or a `/` in it would end the URL somewhere other than where it means to.
 The endpoint pods should use.
 
 An explicit value wins, so an environment can be pointed at a real bucket. With
-minio.enabled and nothing explicit, it is the Service this chart creates.
+objectStore.enabled and nothing explicit, it is the Service this chart creates.
 */}}
 {{- define "test-env.s3Endpoint" -}}
 {{- if .Values.tests.results.s3.endpoint -}}
 {{- .Values.tests.results.s3.endpoint -}}
 {{- else -}}
-{{- printf "http://%s:9000" (include "test-env.minioServiceName" .) -}}
+{{- printf "http://%s:9000" (include "test-env.objectStoreServiceName" .) -}}
 {{- end -}}
 {{- end -}}
 
@@ -351,8 +351,8 @@ Returns JSON; call sites do `include ... | fromJson`.
       (dict "count" (int .Values.auth.replicaCount)    "res" .Values.auth.resources)
       (dict "count" (int .Values.notes.replicaCount)   "res" .Values.notes.resources)
 -}}
-{{- if .Values.minio.enabled -}}
-{{- $workloads = append $workloads (dict "count" 1 "res" .Values.minio.resources) -}}
+{{- if .Values.objectStore.enabled -}}
+{{- $workloads = append $workloads (dict "count" 1 "res" .Values.objectStore.resources) -}}
 {{- end -}}
 {{- if .Values.tests.enabled -}}
 {{- $workloads = append $workloads (dict "count" (int .Values.tests.shards) "res" .Values.tests.resources) -}}
@@ -397,8 +397,8 @@ as a Pending pod rather than as a number that was too small.
 
 {{/* Validation that fails the render rather than the rollout. */}}
 {{- define "test-env.validate" -}}
-{{- if and .Values.tests.enabled (not .Values.minio.enabled) (not .Values.tests.results.s3.endpoint) -}}
-{{- fail "results have nowhere to go: set minio.enabled=true or point tests.results.s3.endpoint at a bucket" -}}
+{{- if and .Values.tests.enabled (not .Values.objectStore.enabled) (not .Values.tests.results.s3.endpoint) -}}
+{{- fail "results have nowhere to go: set objectStore.enabled=true or point tests.results.s3.endpoint at a bucket" -}}
 {{- end -}}
 {{- if and .Values.tests.enabled (not .Values.tests.results.s3.bucket) -}}
 {{- fail "tests.results.s3.bucket is required" -}}

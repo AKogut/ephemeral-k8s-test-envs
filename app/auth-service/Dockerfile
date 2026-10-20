@@ -10,10 +10,10 @@
 # for better-sqlite3 all stay in the build stage; see the size table in
 # docs/architecture.md for the measured difference.
 
-ARG NODE_VERSION=22.23.2
+ARG NODE_VERSION=22.23.3
 
 # ---------------------------------------------------------------- deps --------
-FROM node:${NODE_VERSION}-bookworm-slim AS deps
+FROM node:${NODE_VERSION}-trixie-slim AS deps
 WORKDIR /app
 
 # better-sqlite3 ships prebuilt binaries for linux/amd64 and linux/arm64; the
@@ -38,7 +38,7 @@ COPY src ./src
 RUN npm run build
 
 # ------------------------------------------------------------- runtime --------
-FROM node:${NODE_VERSION}-bookworm-slim AS runtime
+FROM node:${NODE_VERSION}-trixie-slim AS runtime
 WORKDIR /app
 
 ARG SERVICE_VERSION=dev

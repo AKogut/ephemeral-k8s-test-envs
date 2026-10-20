@@ -41,11 +41,11 @@ const virtualHostConfig: S3Config = {
 };
 
 const localConfig: S3Config = {
-  endpoint: 'http://minio:9000',
+  endpoint: 'http://object-store:9000',
   region: 'us-east-1',
   bucket: 'results',
-  accessKeyId: 'minioadmin',
-  secretAccessKey: 'minioadmin',
+  accessKeyId: 'testkey',
+  secretAccessKey: 'testsecret',
   forcePathStyle: true,
 };
 
@@ -211,10 +211,10 @@ describe('amzDates', () => {
 });
 
 describe('addressing style', () => {
-  it('puts the bucket in the path for MinIO', () => {
+  it('puts the bucket in the path for the in-cluster store', () => {
     const signed = signRequest(localConfig, 'GET', 'pr-1/shard-0/x.json', {}, sha256Hex(''), AWS_EXAMPLE.date);
-    assert.equal(signed.url, 'http://minio:9000/results/pr-1/shard-0/x.json');
-    assert.equal(signed.headers.host, 'minio:9000');
+    assert.equal(signed.url, 'http://object-store:9000/results/pr-1/shard-0/x.json');
+    assert.equal(signed.headers.host, 'object-store:9000');
   });
 
   it('puts the bucket in the host for AWS', () => {
@@ -224,7 +224,7 @@ describe('addressing style', () => {
 
   it('addresses the bucket itself when the key is empty, as LIST does', () => {
     const signed = signRequest(localConfig, 'GET', '', { 'list-type': '2' }, sha256Hex(''), AWS_EXAMPLE.date);
-    assert.equal(signed.url, 'http://minio:9000/results?list-type=2');
+    assert.equal(signed.url, 'http://object-store:9000/results?list-type=2');
   });
 });
 
@@ -271,7 +271,7 @@ describe('S3Client', () => {
       await client.putObject('pr-1/shard-0/a.json', Buffer.from('{"a":1}'), 'application/json');
 
       const call = stub.calls[0];
-      assert.equal(call?.url, 'http://minio:9000/results/pr-1/shard-0/a.json');
+      assert.equal(call?.url, 'http://object-store:9000/results/pr-1/shard-0/a.json');
       assert.equal(call?.init?.method, 'PUT');
       const headers = call?.init?.headers as Record<string, string>;
       assert.equal(headers['content-type'], 'application/json');
@@ -335,7 +335,7 @@ describe('S3Client', () => {
     try {
       assert.equal(await client.ensureBucket(), 'created');
       assert.equal(stub.calls[0]?.init?.method, 'PUT');
-      assert.equal(stub.calls[0]?.url, 'http://minio:9000/results');
+      assert.equal(stub.calls[0]?.url, 'http://object-store:9000/results');
     } finally {
       stub.restore();
     }
@@ -397,11 +397,53 @@ describe('S3Client', () => {
       stub.restore();
     }
   });
+
+  const refused = (): Response => {
+    throw new TypeError('fetch failed', { cause: new Error('connect ECONNREFUSED 10.96.0.7:9000') });
+  };
+
+  it('waits for an endpoint that refuses connections until it answers', async () => {
+    const stub = stubFetch([refused, refused, new Response(null, { status: 403 })]);
+    try {
+      await client.waitUntilReachable(1000, 1);
+      assert.equal(stub.calls.length, 3);
+      assert.equal(stub.calls[2]?.url, 'http://object-store:9000');
+      assert.equal(stub.calls[2]?.init?.method, 'HEAD');
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it('names the endpoint and the cause when it never answers', async () => {
+    const stub = stubFetch([refused]);
+    try {
+      await assert.rejects(
+        () => client.waitUntilReachable(20, 5),
+        /object storage at http:\/\/object-store:9000 did not answer within 20ms: connect ECONNREFUSED/,
+      );
+      assert.ok(stub.calls.length > 1);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it('reports an error without a cause as itself', async () => {
+    const stub = stubFetch([
+      (): Response => {
+        throw new Error('socket hang up');
+      },
+    ]);
+    try {
+      await assert.rejects(() => client.waitUntilReachable(0, 1), /did not answer within 0ms: socket hang up/);
+    } finally {
+      stub.restore();
+    }
+  });
 });
 
 describe('s3FromEnv', () => {
   const complete = {
-    RESULTS_S3_ENDPOINT: 'http://minio:9000',
+    RESULTS_S3_ENDPOINT: 'http://object-store:9000',
     RESULTS_S3_BUCKET: 'results',
     RESULTS_S3_ACCESS_KEY_ID: 'id',
     RESULTS_S3_SECRET_ACCESS_KEY: 'secret',
@@ -427,17 +469,16 @@ describe('s3FromEnv', () => {
     }
   });
 
-  it('defaults to path style, because the in-cluster default is MinIO', () => {
-    const signed = signRequest(
-      { ...localConfig, forcePathStyle: (complete as Record<string, string>).X !== undefined },
-      'GET',
-      'k',
-      {},
-      sha256Hex(''),
-      AWS_EXAMPLE.date,
-    );
-    assert.match(signed.url, /minio:9000\/k$/);
-    assert.ok(s3FromEnv(complete));
+  it('defaults to path style, because the in-cluster store has no per-bucket DNS', async () => {
+    const stub = stubFetch([new Response('', { status: 200 })]);
+    try {
+      await s3FromEnv(complete)!.putObject('k', Buffer.from(''));
+      await s3FromEnv({ ...complete, RESULTS_S3_FORCE_PATH_STYLE: 'false' })!.putObject('k', Buffer.from(''));
+      assert.equal(stub.calls[0]?.url, 'http://object-store:9000/results/k');
+      assert.equal(stub.calls[1]?.url, 'http://results.object-store:9000/k');
+    } finally {
+      stub.restore();
+    }
   });
 
   it('honours an explicit opt out of path style', () => {

@@ -12,12 +12,12 @@
 # around 250 MB, which is worth real seconds when four shard pods pull it at
 # once on a cold node. See docs/adr/0002-browserless-test-runner-image.md.
 
-ARG NODE_VERSION=22.23.2
+ARG NODE_VERSION=22.23.3
 
 # ------------------------------------------------------------- sharder --------
 # The shard planner is compiled once and copied in as a plain JS CLI, so the
 # runtime image needs neither TypeScript nor tsx.
-FROM node:${NODE_VERSION}-bookworm-slim AS sharder
+FROM node:${NODE_VERSION}-trixie-slim AS sharder
 WORKDIR /build
 
 COPY scripts/package.json scripts/package-lock.json ./
@@ -29,7 +29,7 @@ COPY scripts/src ./src
 RUN npm run build
 
 # ---------------------------------------------------------------- deps --------
-FROM node:${NODE_VERSION}-bookworm-slim AS deps
+FROM node:${NODE_VERSION}-trixie-slim AS deps
 WORKDIR /app
 
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
@@ -39,7 +39,7 @@ RUN --mount=type=cache,target=/root/.npm \
     npm ci --no-audit --no-fund
 
 # ------------------------------------------------------------- runtime --------
-FROM node:${NODE_VERSION}-bookworm-slim AS runtime
+FROM node:${NODE_VERSION}-trixie-slim AS runtime
 WORKDIR /app
 
 ARG SERVICE_VERSION=dev

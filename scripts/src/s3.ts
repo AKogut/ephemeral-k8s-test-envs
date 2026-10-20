@@ -29,8 +29,8 @@ export interface S3Config {
   secretAccessKey: string;
   /**
    * Path style addresses a bucket as `<endpoint>/<bucket>/<key>`, virtual-host
-   * style as `<bucket>.<endpoint>/<key>`. MinIO speaks path style; AWS prefers
-   * virtual-host but still accepts path style for most regions.
+   * style as `<bucket>.<endpoint>/<key>`. The in-cluster store speaks path style;
+   * AWS prefers virtual-host but still accepts path style for most regions.
    */
   forcePathStyle: boolean;
 }
@@ -294,11 +294,32 @@ export class S3Client {
     await this.send('DELETE', key, {});
   }
 
+  async waitUntilReachable(timeoutMs: number, intervalMs = 1000): Promise<number> {
+    const startedAt = Date.now();
+    for (;;) {
+      try {
+        await fetch(this.config.endpoint, { method: 'HEAD', signal: AbortSignal.timeout(5000) });
+        return Date.now() - startedAt;
+      } catch (error) {
+        if (Date.now() - startedAt + intervalMs > timeoutMs) {
+          const reason = error instanceof Error && error.cause instanceof Error ? error.cause : error;
+          throw new Error(
+            `object storage at ${this.config.endpoint} did not answer within ${timeoutMs}ms: ${
+              reason instanceof Error ? reason.message : String(reason)
+            }`,
+            { cause: error },
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      }
+    }
+  }
+
   /**
    * Creates the bucket, treating "it already exists" as success.
    *
-   * Only useful against the MinIO an ephemeral environment brings with it,
-   * which starts empty every time. Against a real bucket the credentials
+   * Only useful against the object store an ephemeral environment brings with
+   * it, which starts empty every time. Against a real bucket the credentials
    * usually cannot create one and do not need to, which is why the caller opts
    * in rather than this being automatic.
    */
@@ -349,8 +370,8 @@ export function s3FromEnv(env: NodeJS.ProcessEnv = process.env): S3Client | unde
     accessKeyId,
     secretAccessKey,
     region: env.RESULTS_S3_REGION ?? 'us-east-1',
-    // Defaults to path style because the in-cluster default is MinIO, which
-    // only speaks path style without per-bucket DNS.
+    // Defaults to path style because the in-cluster store has no per-bucket
+    // DNS, so only path style can reach it.
     forcePathStyle: (env.RESULTS_S3_FORCE_PATH_STYLE ?? 'true') !== 'false',
   });
 }

@@ -170,7 +170,7 @@ The plan is pure logic and needs no cluster:
 
 ```bash
 npm run shard:plan                       # the plan for 4 shards
-npm --prefix scripts test                # 210 unit tests
+npm --prefix scripts test                # 213 unit tests
 npm --prefix scripts run shard -- --dir ../tests/api/specs --total 8 --format plan
 npm --prefix scripts run --silent shard -- --dir ../tests/api/specs --index 2 --total 4 --format json | jq
 ```

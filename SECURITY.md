@@ -82,6 +82,19 @@ that npm vendors. Both are fixed:
 | Base image moved to Node 22.23.2 | 1 | 7 | 8 | 0 |
 | npm removed from the runtime layer | **0** | **0** | **0** | **0** |
 
+The gate went red again on 2026-10-20, on advisories published after the last
+green run and in code nobody had touched: three criticals in Debian 12's
+`perl-base`, fixed there only through Debian LTS and not yet in the Node base
+image, and one in `proxy-addr`, which express depends on. Measured on
+`auth-service` with that day's database:
+
+| | Fixable CRITICAL | HIGH | MEDIUM | LOW |
+|---|---|---|---|---|
+| Debian 12 base, `proxy-addr` 2.0.7, `qs` 6.15.3 | 4 | 5 | 8 | 0 |
+| Debian 13 base, `proxy-addr` 2.0.8, `qs` 6.16.1 | **0** | **0** | **0** | **0** |
+
+The other four images went the same way.
+
 Removing npm does not make the images smaller — the files come from the base
 layer and a later `rm` only writes a whiteout. What changes is the filesystem the
 container actually runs with, which is what the scanner reads and what anyone
