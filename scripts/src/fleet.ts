@@ -76,7 +76,12 @@ function findStep(job: ApiJob | undefined, name: string): ApiStep | undefined {
  * images — those are the pipeline's cost, not the environment's.
  */
 export function environmentLifetimeMs(job: ApiJob | undefined): number | undefined {
-  const start = msOf(findStep(job, DEPLOY_STEP)?.started_at);
+  const deploy = findStep(job, DEPLOY_STEP);
+  // GitHub gives a skipped step start and end times too. Without this, a run
+  // whose cluster never came up reads as an environment that lived until the
+  // proof step ran, and that proof fails for want of a cluster to ask.
+  if (deploy?.conclusion === 'skipped') return undefined;
+  const start = msOf(deploy?.started_at);
   const end = msOf(findStep(job, TEARDOWN_PROOF_STEP)?.completed_at);
   if (start === undefined || end === undefined) return undefined;
   return Math.max(0, end - start);

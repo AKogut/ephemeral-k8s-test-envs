@@ -202,6 +202,36 @@ describe('runReport', () => {
     assert.equal(report.teardown, 'unproven');
   });
 
+  it('does not count a failed proof on a run whose deploy was skipped', () => {
+    // The shape of run 42583637532: the kind download failed its checksum, so
+    // the deploy step was skipped, yet GitHub still timestamped it, and the
+    // proof step failed because there was no cluster to ask.
+    const report = runReport(RUN, [
+      {
+        name: ENVIRONMENT_JOB,
+        conclusion: 'failure',
+        steps: [
+          { name: 'Create kind cluster', conclusion: 'failure' },
+          {
+            name: 'Deploy the environment',
+            conclusion: 'skipped',
+            started_at: '2026-11-09T08:12:00Z',
+            completed_at: '2026-11-09T08:12:00Z',
+          },
+          {
+            name: 'Prove the environment is gone',
+            conclusion: 'failure',
+            started_at: '2026-11-09T08:12:41Z',
+            completed_at: '2026-11-09T08:12:41Z',
+          },
+        ],
+      },
+    ]);
+    assert.equal(report.lifetimeMs, undefined);
+    assert.equal(report.teardown, 'unproven');
+    assert.deepEqual(regressions(summarise([report]), { maxLifetimeMs: 900_000 }), []);
+  });
+
   it('handles a run with no environment job and no branch', () => {
     const report = runReport({ ...RUN, head_branch: null, conclusion: null }, []);
     assert.equal(report.lifetimeMs, undefined);
