@@ -7,10 +7,8 @@
 # It has no production dependencies at all — the merge is plain Node — so the
 # runtime stage carries nothing but compiled JavaScript on a slim base.
 
-ARG NODE_VERSION=26.12.0
-
 # --------------------------------------------------------------- build --------
-FROM node:${NODE_VERSION}-trixie-slim AS build
+FROM node:26.13.1-trixie-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc AS build
 WORKDIR /build
 
 COPY package.json package-lock.json ./
@@ -22,7 +20,10 @@ COPY src ./src
 RUN npm run build
 
 # ------------------------------------------------------------- runtime --------
-FROM node:${NODE_VERSION}-trixie-slim AS runtime
+FROM node:26.13.1-trixie-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc AS runtime
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
 ARG SERVICE_VERSION=dev

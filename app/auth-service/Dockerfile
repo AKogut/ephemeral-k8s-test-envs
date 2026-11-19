@@ -10,10 +10,8 @@
 # for better-sqlite3 all stay in the build stage; see the size table in
 # docs/architecture.md for the measured difference.
 
-ARG NODE_VERSION=26.12.0
-
 # ---------------------------------------------------------------- deps --------
-FROM node:${NODE_VERSION}-trixie-slim AS deps
+FROM node:26.13.1-trixie-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc AS deps
 WORKDIR /app
 
 # better-sqlite3 ships prebuilt binaries for linux/amd64 and linux/arm64; the
@@ -38,7 +36,10 @@ COPY src ./src
 RUN npm run build
 
 # ------------------------------------------------------------- runtime --------
-FROM node:${NODE_VERSION}-trixie-slim AS runtime
+FROM node:26.13.1-trixie-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc AS runtime
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
 ARG SERVICE_VERSION=dev
