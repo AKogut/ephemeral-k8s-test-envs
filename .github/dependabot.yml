@@ -17,71 +17,26 @@ version: 2
 # Both remain open to minor and patch updates, so security fixes still arrive.
 
 updates:
-  # Six independent npm packages — no workspace hoisting, so each is tracked
-  # separately and an update to one cannot silently change another.
+  # Six independent npm packages: no workspace hoisting, so each keeps its own
+  # lockfile and an update to one cannot silently change another. Their minor
+  # and patch updates arrive together, in one pull request.
   - package-ecosystem: npm
-    directory: /
+    directories:
+      - /
+      - /app/auth-service
+      - /app/notes-service
+      - /app/gateway
+      - /scripts
+      - /tests/api
     schedule: { interval: monthly }
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 5
     groups:
-      dev-dependencies:
-        dependency-type: development
-    ignore:
-      - dependency-name: "@types/node"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: typescript
-        update-types: ["version-update:semver-major"]
-
-  - package-ecosystem: npm
-    directory: /app/auth-service
-    schedule: { interval: monthly }
-    open-pull-requests-limit: 3
-    groups:
-      dev-dependencies:
-        dependency-type: development
-    ignore:
-      - dependency-name: "@types/node"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: typescript
-        update-types: ["version-update:semver-major"]
-
-  - package-ecosystem: npm
-    directory: /app/notes-service
-    schedule: { interval: monthly }
-    open-pull-requests-limit: 3
-    groups:
-      dev-dependencies:
-        dependency-type: development
-    ignore:
-      - dependency-name: "@types/node"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: typescript
-        update-types: ["version-update:semver-major"]
-
-  - package-ecosystem: npm
-    directory: /app/gateway
-    schedule: { interval: monthly }
-    open-pull-requests-limit: 3
-    ignore:
-      - dependency-name: "@types/node"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: typescript
-        update-types: ["version-update:semver-major"]
-
-  - package-ecosystem: npm
-    directory: /scripts
-    schedule: { interval: monthly }
-    open-pull-requests-limit: 3
-    ignore:
-      - dependency-name: "@types/node"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: typescript
-        update-types: ["version-update:semver-major"]
-
-  - package-ecosystem: npm
-    directory: /tests/api
-    schedule: { interval: monthly }
-    open-pull-requests-limit: 3
+      npm-minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+      npm-security:
+        applies-to: security-updates
+        patterns: ["*"]
     ignore:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
@@ -93,13 +48,9 @@ updates:
       - /
       - /.github/actions/*
     schedule: { interval: monthly }
-
-  - package-ecosystem: docker-compose
-    directory: /
-    schedule: { interval: monthly }
-    ignore:
-      - dependency-name: postgres
-        update-types: ["version-update:semver-major"]
+    groups:
+      actions:
+        patterns: ["*"]
 
   - package-ecosystem: docker
     directories:
