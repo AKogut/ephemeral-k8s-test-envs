@@ -42,7 +42,9 @@ external agent and no stored secret:
    when `main` is green again (#183).
 4. Dependabot groups its updates: one pull request per kind of update. It
    auto-merges minor, patch and digest updates once the required checks pass,
-   and labels majors for a person (#189).
+   and labels majors for a person (#189). Version updates wait until a release
+   is three days old, the same cooldown Renovate and the owner's own merge
+   policy use. Security updates do not wait.
 5. Renovate covers only what Dependabot cannot see: versions pinned in
    workflow env, chart values and scripts. Postgres in compose and in the chart
    moves together, and a CI step fails if they differ (#190).

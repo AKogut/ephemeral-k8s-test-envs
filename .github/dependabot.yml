@@ -29,6 +29,8 @@ updates:
       - /scripts
       - /tests/api
     schedule: { interval: monthly }
+    cooldown:
+      default-days: 3
     open-pull-requests-limit: 5
     groups:
       npm-minor-and-patch:
@@ -48,6 +50,8 @@ updates:
       - /
       - /.github/actions/*
     schedule: { interval: monthly }
+    cooldown:
+      default-days: 3
     groups:
       actions:
         patterns: ["*"]
@@ -60,6 +64,8 @@ updates:
       - /tests/api
       - /scripts
     schedule: { interval: weekly }
+    cooldown:
+      default-days: 3
     groups:
       base-images:
         patterns: ["*"]
