@@ -24,7 +24,9 @@ records why it is built this way.
 | `publish-wiki.yml` | on merge | Mirrors `docs/wiki/` to the wiki | — |
 
 A merge always waits for the 23 required checks. "Merges by itself" never means
-merging past a red check.
+merging past a red check. A version update is also not proposed until the release
+is three days old, for Dependabot and Renovate alike. Security updates do not
+wait.
 
 ## What needs a person
 
