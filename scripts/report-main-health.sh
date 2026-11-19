@@ -19,7 +19,7 @@ if [ "$ATTEMPT" = "1" ]; then
   exit 0
 fi
 
-report="\`main\` failed on ${EVENT} in [run ${RUN_ID}](${RUN_URL}), attempt ${ATTEMPT}, after the automatic retry. See the section Between commits in docs/ci-pipeline.md."
+report="\`main\` failed on ${EVENT} in [run ${RUN_ID}](${RUN_URL}), attempt ${ATTEMPT}, after the automatic retry. See MAINTENANCE.md for what to do."
 if [ -n "$open" ]; then
   gh issue comment "$open" --repo "$GITHUB_REPOSITORY" --body "$report"
   echo "commented on #$open"

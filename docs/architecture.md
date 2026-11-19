@@ -278,4 +278,4 @@ is left above is what a provider would genuinely add.
 - [Cost and cleanup](cost-and-cleanup.md) — the teardown guarantees, stated precisely
 - [CI pipeline](ci-pipeline.md) — a step-by-step walk through the workflow
 - [Local development](local-development.md) — running everything without a cluster
-- [Architecture decisions](adr/) — the eleven decisions worth arguing about
+- [Architecture decisions](adr/) — the twelve decisions worth arguing about
