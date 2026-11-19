@@ -1112,7 +1112,7 @@ jobs:
           set -euo pipefail
           helm install traefik oci://ghcr.io/traefik/helm/traefik --version "$TRAEFIK_CHART_VERSION" \
             --namespace traefik --create-namespace \
-            --set service.type=ClusterIP \
+            --set service.spec.type=ClusterIP \
             --set ingressClass.isDefaultClass=true
 
           # `wait --for=condition=available` straight after an install can match
