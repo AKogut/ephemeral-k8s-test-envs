@@ -1,0 +1,44 @@
+name: Create a kind cluster
+description: >
+  Installs the pinned kind and kubectl, verifying each download against its
+  published checksum and retrying both the downloads and the cluster creation,
+  then creates the cluster on the pinned node image.
+
+inputs:
+  name:
+    description: Cluster name
+    required: true
+  config:
+    description: Path to a kind cluster config, if any
+    required: false
+    default: ""
+  wait:
+    description: How long kind waits for the control plane to be Ready
+    required: false
+    default: 120s
+  kind-version:
+    description: kind release, e.g. v0.33.0
+    required: true
+  kubectl-version:
+    description: kubectl release, e.g. v1.37.0
+    required: true
+  node-image:
+    description: kindest/node image the cluster runs
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install kind and kubectl, then create the cluster
+      shell: bash
+      env:
+        BIN_DIR: ${{ runner.temp }}/kind-bin
+        CLUSTER_NAME: ${{ inputs.name }}
+        KIND_CONFIG: ${{ inputs.config }}
+        KIND_WAIT: ${{ inputs.wait }}
+        KIND_VERSION: ${{ inputs.kind-version }}
+        KUBECTL_VERSION: ${{ inputs.kubectl-version }}
+        KIND_NODE_IMAGE: ${{ inputs.node-image }}
+      run: |
+        "$GITHUB_ACTION_PATH/create.sh"
+        echo "$BIN_DIR" >> "$GITHUB_PATH"

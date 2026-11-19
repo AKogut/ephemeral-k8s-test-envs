@@ -1,0 +1,22 @@
+name: Retry a failed run once
+
+on:
+  workflow_run:
+    workflows: ["Ephemeral environment"]
+    types: [completed]
+
+permissions:
+  actions: write
+
+jobs:
+  rerun:
+    name: Rerun the failed jobs once
+    if: github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.run_attempt == 1
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - name: Rerun
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: gh run rerun "$RUN_ID" --failed --repo "$GITHUB_REPOSITORY"

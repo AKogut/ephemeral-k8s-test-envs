@@ -2,12 +2,13 @@
 
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) takes a pull request
 from "opened" to "environment destroyed and proven gone". It is the only
-workflow a pull request runs. The other three never touch a pull request:
+workflow a pull request runs. The others never check a pull request:
 [`fleet.yml`](../.github/workflows/fleet.yml) reads the run history weekly,
 [`prune-images.yml`](../.github/workflows/prune-images.yml) deletes published
-images the same way the pipeline deletes namespaces, and
+images the same way the pipeline deletes namespaces,
 [`publish-wiki.yml`](../.github/workflows/publish-wiki.yml) mirrors `docs/wiki/`
-on merge.
+on merge, and [`rerun-failed-once.yml`](../.github/workflows/rerun-failed-once.yml)
+retries a failed run of this one, once.
 
 ```
         no cluster needed — all at once                  one cluster each
@@ -335,6 +336,35 @@ image store — because the chart installs with `pullPolicy: Never`, where a
 mislaid image surfaces minutes later as `ErrImageNeverPull` and reads like a
 scheduling problem.
 
+## Between commits
+
+A repository in maintenance can go weeks without a commit, and the world it
+depends on keeps moving. In October 2026 MinIO stopped publishing its image and
+two criticals were published against the base images. Every pull request went
+red for three weeks before anyone opened one. Three things now cover that gap:
+
+- **A weekly run of `main`**, Mondays at 05:00 UTC, two hours before `Fleet`
+  reads the history. It rebuilds and rescans every image, so a new advisory
+  shows up in code scanning without a commit, and it runs every cluster job
+  against today's upstream.
+- **One automatic retry.** When a run fails on its first attempt,
+  `rerun-failed-once.yml` reruns its failed jobs. Network flakes stop needing a
+  person: a `kind` download that came back without a checksum, or a GHCR pull
+  that failed four times in a minute. A second failure is left alone, because
+  a real regression fails twice.
+- **One issue for a red `main`.** `Report the health of main` runs after every
+  run of `main` that is not a pull request. If anything failed after the
+  retry, it opens an issue labelled `main-red`, or comments on the one that is
+  already open, and closes it once `main` is green again.
+  [`scripts/report-main-health.sh`](../scripts/report-main-health.sh) does the
+  deciding.
+
+Cluster creation itself retries too:
+[`.github/actions/kind-cluster`](../.github/actions/kind-cluster/action.yml)
+installs the pinned `kind` and `kubectl`, checks each download against its
+published checksum, retries the downloads and the cluster, and replaces the
+third-party action that used to do the first part without a retry.
+
 ## Running it by hand
 
 `workflow_dispatch` takes two inputs:
@@ -429,9 +459,10 @@ failure locally is one command, not a re-derivation of what the workflow does.
   [ADR 0009](adr/0009-reference-implementation-not-a-platform.md).
 - **A `workflow_call` interface.** Same decision: the pipeline is meant to be
   read and reimplemented, not called.
-- **Nightly runs of this workflow.** Nothing to catch: there is no long-lived
-  environment to drift. What *is* scheduled is
-  [`fleet.yml`](../.github/workflows/fleet.yml), weekly — it reads the run
-  history rather than deploying anything, because the questions it answers
-  (does teardown hold across runs, how long do environments live, is the shard
-  split still balanced) cannot be asked from inside a single run.
+- **Nightly runs of this workflow.** Weekly is enough. There is no long-lived
+  environment to drift. What drifts is upstream (images, advisories, runners),
+  and that moves on a scale of weeks. [`fleet.yml`](../.github/workflows/fleet.yml)
+  is scheduled for a different reason: it reads the run history rather than
+  deploying anything, because the questions it answers (does teardown hold
+  across runs, how long do environments live, is the shard split still
+  balanced) cannot be asked from inside a single run.
