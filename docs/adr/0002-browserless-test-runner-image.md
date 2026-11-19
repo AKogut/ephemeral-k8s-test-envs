@@ -26,8 +26,7 @@ every PR.
 Build the runner on `node:26-trixie-slim` with browser downloads suppressed:
 
 ```dockerfile
-ARG NODE_VERSION=26.12.0
-FROM node:${NODE_VERSION}-trixie-slim AS deps
+FROM node:26.13.1-trixie-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc AS deps
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 RUN npm ci --no-audit --no-fund
 ```

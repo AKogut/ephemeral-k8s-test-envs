@@ -95,6 +95,17 @@ image, and one in `proxy-addr`, which express depends on. Measured on
 
 The other four images went the same way.
 
+The base image is no longer moved by hand. Every stage names it by tag and
+digest, so Dependabot proposes a new Node patch release and every rebuild of the
+same tag, weekly and in one pull request. The runtime stage also runs
+`apt-get upgrade`, because the official image is rebuilt on its own schedule and
+a Debian fix can sit unshipped for weeks: on 2026-11-19 the newest
+`node:26.13.1-trixie-slim` still carried a `zlib1g` with fixable HIGH and MEDIUM
+advisories, and the same image after the upgrade had none, at the same
+compressed size. The cost is that two builds of one commit a week apart can
+differ in Debian patch versions. The scan reads every build, which is what
+covers that difference.
+
 Removing npm does not make the images smaller — the files come from the base
 layer and a later `rm` only writes a whiteout. What changes is the filesystem the
 container actually runs with, which is what the scanner reads and what anyone
