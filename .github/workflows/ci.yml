@@ -14,6 +14,8 @@ on:
     branches: [main]
   push:
     branches: [main]
+  schedule:
+    - cron: "0 5 * * 1"
   workflow_dispatch:
     inputs:
       shards:
@@ -967,14 +969,14 @@ jobs:
       # ships, so this was the one cluster in the pipeline running an
       # unpinned Kubernetes.
       - name: Create a cluster whose CNI enforces policy
-        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
+        uses: ./.github/actions/kind-cluster
         with:
-          version: ${{ env.KIND_VERSION }}
-          kubectl_version: ${{ env.KUBECTL_VERSION }}
-          node_image: ${{ env.KIND_NODE_IMAGE }}
-          cluster_name: netpol
+          name: netpol
           config: scripts/kind-networkpolicy.yaml
           wait: 120s
+          kind-version: ${{ env.KIND_VERSION }}
+          kubectl-version: ${{ env.KUBECTL_VERSION }}
+          node-image: ${{ env.KIND_NODE_IMAGE }}
 
       - name: Install Calico, and wait for it to mean it
         run: |
@@ -1074,13 +1076,13 @@ jobs:
           version: ${{ env.HELM_VERSION }}
 
       - name: Create kind cluster
-        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
+        uses: ./.github/actions/kind-cluster
         with:
-          version: ${{ env.KIND_VERSION }}
-          kubectl_version: ${{ env.KUBECTL_VERSION }}
-          node_image: ${{ env.KIND_NODE_IMAGE }}
-          cluster_name: preview
+          name: preview
           wait: 120s
+          kind-version: ${{ env.KIND_VERSION }}
+          kubectl-version: ${{ env.KUBECTL_VERSION }}
+          node-image: ${{ env.KIND_NODE_IMAGE }}
 
       - name: Put the images into the cluster
         uses: ./.github/actions/load-images
@@ -1219,13 +1221,13 @@ jobs:
           version: ${{ env.HELM_VERSION }}
 
       - name: Create kind cluster
-        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
+        uses: ./.github/actions/kind-cluster
         with:
-          version: ${{ env.KIND_VERSION }}
-          kubectl_version: ${{ env.KUBECTL_VERSION }}
-          node_image: ${{ env.KIND_NODE_IMAGE }}
-          cluster_name: selfdestruct
+          name: selfdestruct
           wait: 120s
+          kind-version: ${{ env.KIND_VERSION }}
+          kubectl-version: ${{ env.KUBECTL_VERSION }}
+          node-image: ${{ env.KIND_NODE_IMAGE }}
 
       - name: Put the images into the cluster
         uses: ./.github/actions/load-images
@@ -1352,13 +1354,13 @@ jobs:
           version: ${{ env.HELM_VERSION }}
 
       - name: Create kind cluster
-        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
+        uses: ./.github/actions/kind-cluster
         with:
-          version: ${{ env.KIND_VERSION }}
-          kubectl_version: ${{ env.KUBECTL_VERSION }}
-          node_image: ${{ env.KIND_NODE_IMAGE }}
-          cluster_name: pgenv
+          name: pgenv
           wait: 120s
+          kind-version: ${{ env.KIND_VERSION }}
+          kubectl-version: ${{ env.KUBECTL_VERSION }}
+          node-image: ${{ env.KIND_NODE_IMAGE }}
 
       - name: Put the images into the cluster
         uses: ./.github/actions/load-images
@@ -1540,18 +1542,18 @@ jobs:
           echo "Environment: $name"
 
       - name: Create kind cluster
-        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
+        uses: ./.github/actions/kind-cluster
         with:
-          version: ${{ env.KIND_VERSION }}
-          kubectl_version: ${{ env.KUBECTL_VERSION }}
-          node_image: ${{ env.KIND_NODE_IMAGE }}
-          cluster_name: ephemeral-test-envs
+          name: ephemeral-test-envs
           # Two workers, so shard pods have somewhere else to go. On a
           # single-node cluster the property asserted below cannot fail, which
           # is exactly how the shared-volume backend survived to v1.0 without
           # anyone noticing it confined every shard to one machine.
           config: scripts/kind-multi-node.yaml
           wait: 180s
+          kind-version: ${{ env.KIND_VERSION }}
+          kubectl-version: ${{ env.KUBECTL_VERSION }}
+          node-image: ${{ env.KIND_NODE_IMAGE }}
 
       - name: Put the images into the cluster
         uses: ./.github/actions/load-images
@@ -1862,3 +1864,24 @@ jobs:
             exit 1
           fi
           echo "All shards passed."
+
+  main-health:
+    name: Report the health of main
+    if: always() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: [chart, sharding, suite, scripts, code, lint, images, runner, aggregator, stack, postgres, build, networkpolicy, preview-url, self-destruct, postgres-environment, ephemeral-environment]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Open, update or close the main-red issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+          ATTEMPT: ${{ github.run_attempt }}
+          EVENT: ${{ github.event_name }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: ./scripts/report-main-health.sh
