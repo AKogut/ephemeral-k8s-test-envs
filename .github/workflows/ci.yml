@@ -56,14 +56,14 @@ env:
   CAN_WRITE: ${{ !inputs.simulate_fork && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
   # Pinned rather than :latest — a storage backend that changes under the tests
   # would turn a real regression and an upstream change into the same red build.
-  OBJECT_STORE_IMAGE: ghcr.io/versity/versitygw:v1.9.0
+  OBJECT_STORE_IMAGE: ghcr.io/versity/versitygw:v1.11.0
   # Pinned for the same reason: a CNI that changes under the policy tests would
   # make an upstream change and a real regression look identical.
-  CALICO_MANIFEST: https://raw.githubusercontent.com/projectcalico/calico/v3.33.0/manifests/calico.yaml
+  CALICO_MANIFEST: https://raw.githubusercontent.com/projectcalico/calico/v3.33.1/manifests/calico.yaml
   # Pinned for the same reason. Traefik replaced ingress-nginx, which was
   # retired in March 2026; its Service is ClusterIP because the probe runs
   # inside the cluster and kind has no load balancer.
-  TRAEFIK_CHART_VERSION: 42.0.0
+  TRAEFIK_CHART_VERSION: 42.4.0
   # And the largest dependency of all, which was the one left floating: without
   # these two, the Kubernetes version of every environment in this pipeline is
   # whatever the action's default kind happens to ship this month, and
@@ -73,7 +73,7 @@ env:
   KIND_VERSION: v0.33.0
   KIND_NODE_IMAGE: kindest/node:v1.37.0
   KUBECTL_VERSION: v1.37.0
-  HELM_VERSION: v4.3.1
+  HELM_VERSION: v4.3.2
 
 jobs:
   chart:
@@ -182,6 +182,17 @@ jobs:
 
       - name: Security defaults are actually applied
         run: python3 scripts/assert-security-defaults.py /tmp/rendered.yaml
+
+      - name: Compose and the chart run the same Postgres
+        run: |
+          chart=$(helm template ci charts/test-env --set database.backend=postgres \
+            | grep -m1 -oE 'image: "postgres:[^"]+"' | cut -d'"' -f2)
+          compose=$(grep -m1 -oE 'image: postgres:[^[:space:]]+' docker-compose.postgres.yml | cut -d' ' -f2)
+          echo "chart: ${chart:-none}  compose: ${compose:-none}"
+          if [ -z "$chart" ] || [ "$chart" != "$compose" ]; then
+            echo "::error::the chart runs ${chart:-no Postgres} and compose runs ${compose:-no Postgres}"
+            exit 1
+          fi
 
   sharding:
     name: Shard planner
@@ -1019,7 +1030,7 @@ jobs:
           # The negative half, and the one that makes the policy a claim rather
           # than a document. An unlabelled pod in the same namespace must not
           # reach the services.
-          kubectl -n "$NS" run intruder --image=busybox:1.36 --restart=Never --command -- sleep 300
+          kubectl -n "$NS" run intruder --image=busybox:1.38 --restart=Never --command -- sleep 300
           kubectl -n "$NS" wait --for=condition=ready pod/intruder --timeout=120s
 
           blocked=0
@@ -1145,7 +1156,7 @@ jobs:
           # attempt put the probe in the namespace and the ResourceQuota
           # refused it — correctly, since the quota is computed from the
           # release's own workloads and a curl pod is not one of them (#83).
-          kubectl -n default run urlprobe --image=curlimages/curl:8.11.1 --restart=Never \
+          kubectl -n default run urlprobe --image=curlimages/curl:8.23.0 --restart=Never \
             --command -- sleep 300
           kubectl -n default wait --for=condition=ready pod/urlprobe --timeout=120s
 
@@ -1447,7 +1458,7 @@ jobs:
           # NetworkPolicy, so an unlabelled pod would work here and break the
           # day this runs on a CNI that enforces — which is exactly how the
           # policy stayed wrong for several releases (#90).
-          kubectl -n "$NS" run apiprobe --image=curlimages/curl:8.11.1 --restart=Never \
+          kubectl -n "$NS" run apiprobe --image=curlimages/curl:8.23.0 --restart=Never \
             --labels="app.kubernetes.io/name=test-env,app.kubernetes.io/instance=pgenv,app.kubernetes.io/component=api-tests" \
             --command -- sleep 300
           kubectl -n "$NS" wait --for=condition=ready pod/apiprobe --timeout=120s
@@ -1616,8 +1627,8 @@ jobs:
 
           kubectl -n "$ns" describe resourcequota | sed -n '/Resource/,$p'
 
-          if refusal=$(kubectl -n "$ns" run quota-probe --image=busybox:1.36 --restart=Never \
-              --overrides='{"spec":{"containers":[{"name":"p","image":"busybox:1.36","command":["true"],"resources":{"requests":{"cpu":"64","memory":"64Mi"},"limits":{"cpu":"64","memory":"64Mi"}}}]}}' \
+          if refusal=$(kubectl -n "$ns" run quota-probe --image=busybox:1.38 --restart=Never \
+              --overrides='{"spec":{"containers":[{"name":"p","image":"busybox:1.38","command":["true"],"resources":{"requests":{"cpu":"64","memory":"64Mi"},"limits":{"cpu":"64","memory":"64Mi"}}}]}}' \
               2>&1 >/dev/null); then
             echo "::error::the namespace accepted a 64-core pod — the quota is not being enforced"
             kubectl -n "$ns" delete pod quota-probe --ignore-not-found
@@ -1631,7 +1642,7 @@ jobs:
 
           # And a pod that declares nothing must be given defaults rather than
           # rejected, which is the LimitRange's entire job.
-          kubectl -n "$ns" run limit-probe --image=busybox:1.36 --restart=Never --command -- true
+          kubectl -n "$ns" run limit-probe --image=busybox:1.38 --restart=Never --command -- true
           kubectl -n "$ns" get pod limit-probe \
             -o jsonpath='{.spec.containers[0].resources}{"\n"}'
           kubectl -n "$ns" delete pod limit-probe --ignore-not-found >/dev/null

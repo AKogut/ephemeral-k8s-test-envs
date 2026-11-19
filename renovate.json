@@ -1,0 +1,100 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Only what Dependabot cannot see: versions pinned in workflow env, chart values, scripts and docs. npm, Dockerfiles and actions stay with Dependabot.",
+  "enabledManagers": ["custom.regex", "docker-compose"],
+  "dependencyDashboard": { "enabled": true },
+  "schedule": ["before 6am on the first day of the month"],
+  "timezone": "UTC",
+  "minimumReleaseAge": "3 days",
+  "prHourlyLimit": 0,
+  "automerge": true,
+  "automergeType": "pr",
+  "platformAutomerge": true,
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "kind itself",
+      "managerFilePatterns": ["/^\\.github/workflows/ci\\.yml$/"],
+      "matchStrings": ["KIND_VERSION: (?<currentValue>v[0-9.]+)"],
+      "depNameTemplate": "kubernetes-sigs/kind",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
+      "description": "The node image, and kubectl at the same Kubernetes version",
+      "managerFilePatterns": ["/^\\.github/workflows/ci\\.yml$/", "/^scripts/local-demo\\.sh$/"],
+      "matchStrings": ["kindest/node:(?<currentValue>v[0-9.]+)", "KUBECTL_VERSION: (?<currentValue>v[0-9.]+)"],
+      "depNameTemplate": "kindest/node",
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Helm",
+      "managerFilePatterns": ["/^\\.github/workflows/ci\\.yml$/"],
+      "matchStrings": ["HELM_VERSION: (?<currentValue>v[0-9.]+)"],
+      "depNameTemplate": "helm/helm",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
+      "description": "Calico, in CI and in the kind config that names it",
+      "managerFilePatterns": ["/^\\.github/workflows/ci\\.yml$/", "/^scripts/kind-networkpolicy\\.yaml$/"],
+      "matchStrings": ["projectcalico/calico/(?<currentValue>v[0-9.]+)/manifests"],
+      "depNameTemplate": "projectcalico/calico",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
+      "description": "The Traefik chart behind the preview-URL job",
+      "managerFilePatterns": ["/^\\.github/workflows/ci\\.yml$/"],
+      "matchStrings": ["TRAEFIK_CHART_VERSION: (?<currentValue>[0-9.]+)"],
+      "depNameTemplate": "traefik/traefik-helm-chart",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "description": "The object store, in CI, in the chart and in the test that documents running it",
+      "managerFilePatterns": ["/^\\.github/workflows/ci\\.yml$/", "/^scripts/src/s3\\.integration\\.test\\.ts$/"],
+      "matchStrings": ["ghcr\\.io/versity/versitygw:(?<currentValue>v[0-9.]+)"],
+      "depNameTemplate": "ghcr.io/versity/versitygw",
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Images named by repository and tag in the chart's values",
+      "managerFilePatterns": ["/^charts/test-env/values\\.yaml$/"],
+      "matchStrings": ["repository: (?<depName>ghcr\\.io/versity/versitygw|postgres)\\n(?:\\s*#.*\\n)*\\s*tag: (?<currentValue>\\S+)"],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Throwaway probe images the CI jobs run",
+      "managerFilePatterns": ["/^\\.github/workflows/ci\\.yml$/"],
+      "matchStrings": ["(?<depName>busybox|curlimages/curl):(?<currentValue>[0-9.]+)"],
+      "datasourceTemplate": "docker"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "kind, its node image and kubectl move together, or not at all",
+      "matchDepNames": ["kubernetes-sigs/kind", "kindest/node"],
+      "groupName": "kind and Kubernetes"
+    },
+    {
+      "description": "Postgres in compose and in the chart move together; a major is a migration (#148)",
+      "matchDepNames": ["postgres"],
+      "groupName": "Postgres"
+    },
+    {
+      "matchDepNames": ["postgres"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
+      "description": "A major version is a decision for a person, never an automatic merge",
+      "matchUpdateTypes": ["major"],
+      "automerge": false
+    }
+  ]
+}

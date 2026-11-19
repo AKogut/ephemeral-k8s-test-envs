@@ -384,7 +384,7 @@ route would be exercised for the first time by a stranger's contribution.
 KIND_VERSION:    v0.33.0
 KIND_NODE_IMAGE: kindest/node:v1.37.0
 KUBECTL_VERSION: v1.37.0
-HELM_VERSION:    v4.3.1
+HELM_VERSION:    v4.3.2
 runs-on:         ubuntu-26.04
 ```
 

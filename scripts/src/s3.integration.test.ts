@@ -13,7 +13,7 @@
  *
  *   docker run -d --name object-store -p 19000:9000 --tmpfs /data \
  *     -e ROOT_ACCESS_KEY=testkey -e ROOT_SECRET_KEY=testsecret123 \
- *     ghcr.io/versity/versitygw:v1.9.0 --port :9000 posix /data
+ *     ghcr.io/versity/versitygw:v1.11.0 --port :9000 posix /data
  *
  *   RESULTS_S3_ENDPOINT=http://127.0.0.1:19000 RESULTS_S3_BUCKET=results \
  *   RESULTS_S3_ACCESS_KEY_ID=testkey RESULTS_S3_SECRET_ACCESS_KEY=testsecret123 \

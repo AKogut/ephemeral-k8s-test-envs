@@ -292,7 +292,7 @@ objectStore:
     repository: ghcr.io/versity/versitygw
     # Pinned: storage that changes under the tests would make a real regression
     # and an upstream change produce the same failure.
-    tag: v1.9.0
+    tag: v1.11.0
     pullPolicy: IfNotPresent
   storage:
     sizeLimit: 2Gi
