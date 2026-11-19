@@ -22,7 +22,8 @@ retries a failed run of this one, once.
                                                   └──────────────────────────┘
 ```
 
-Seventeen jobs, in three ranks. Nothing in the first rank depends on anything
+Seventeen jobs, in three ranks, and on `main` an eighteenth that reports how
+they went (see *Between commits*). Nothing in the first rank depends on anything
 else, so it all starts at once; `Package` waits for **all** of it; the five
 cluster jobs then run in parallel, each creating and destroying its own kind
 cluster.
@@ -45,7 +46,7 @@ script does not wait behind a coverage run, and the run page names what broke.
 | `Typecheck and build` | Type errors, and a build that no longer compiles |
 | `API suite typecheck` | The same, for the Playwright suite |
 | `Shell scripts` | `shellcheck` — shell bugs are otherwise found in production |
-| `Shard planner` | 213 unit tests, **gated** at 99% lines / 94% branches / 100% functions, with versitygw alongside so the storage client is tested against a real endpoint; then asserts the plan covers every spec file exactly once |
+| `Shard planner` | 214 unit tests, **gated** at 99% lines / 94% branches / 100% functions, with versitygw alongside so the storage client is tested against a real endpoint; then asserts the plan covers every spec file exactly once |
 | `Helm chart` | Lint with both value sets; render at 1, 2, 4, 8, 16 shards; the quota tracks the shard count; no shared volume survives anywhere in the chart; invalid values are **rejected**; security defaults are actually applied |
 | `Build <service> image` ×3 | The image builds, is scanned, and starts, serves and shuts down cleanly |
 | `Build the test runner image` | The planner works *inside* the image, and no browsers came with it |
@@ -357,7 +358,7 @@ red for three weeks before anyone opened one. Three things now cover that gap:
   retry, it opens an issue labelled `main-red`, or comments on the one that is
   already open, and closes it once `main` is green again.
   [`scripts/report-main-health.sh`](../scripts/report-main-health.sh) does the
-  deciding.
+  deciding, and [MAINTENANCE.md](../MAINTENANCE.md) says what to do about it.
 
 Cluster creation itself retries too:
 [`.github/actions/kind-cluster`](../.github/actions/kind-cluster/action.yml)

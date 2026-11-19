@@ -33,6 +33,13 @@ is merged.
 > [ADR 0009](docs/adr/0009-reference-implementation-not-a-platform.md) argues it,
 > including what it costs.
 
+> **Status: maintenance.** No new features are planned. Dependencies, base
+> images, pinned tools and security fixes are updated and merged without a
+> person once the full pipeline passes, `main` is rebuilt and checked every
+> week, and a `main` that stays red opens an issue.
+> [MAINTENANCE.md](MAINTENANCE.md) says what runs by itself and what still needs
+> someone.
+
 ## Quick start
 
 ```bash
@@ -278,10 +285,10 @@ app/
   notes-service/    Notes CRUD — per-owner scoping, upstream token verification
   gateway/          Reverse proxy — hand-rolled on fetch, zero proxy dependencies
 tests/api/          113 Playwright API tests + the shard entrypoint
-scripts/            shard planner · result merge · k8s + S3 + zip clients (213 unit tests)
+scripts/            shard planner · result merge · k8s + S3 + zip clients (214 unit tests)
                     local-demo.sh · fetch-results.sh · verify-teardown.sh
 charts/test-env/    The Helm chart — one isolated environment per release
-docs/               architecture · sharding · cost-and-cleanup · ci-pipeline · 11 ADRs
+docs/               architecture · sharding · cost-and-cleanup · ci-pipeline · 12 ADRs
 .github/workflows/  ci: check → package → 5 cluster jobs, each proving one guarantee
                     fleet: weekly, reads run history · publish-wiki: on merge
 ```
@@ -294,7 +301,7 @@ docs/               architecture · sharding · cost-and-cleanup · ci-pipeline 
 ./scripts/local-demo.sh --shards 8   # …with 8 shards
 ./scripts/local-demo.sh --no-tests   # just the environment
 
-npm run test:unit                    # 213 unit tests, no cluster needed
+npm run test:unit                    # 214 unit tests, no cluster needed
 npm run shard:plan                   # print the plan the pods will compute
 npm run lint                         # ESLint, type-aware, all five packages
 npm run typecheck                    # tsc across all five packages
@@ -336,7 +343,8 @@ force pushes, no deletions. Board:
 | [Cost and cleanup](docs/cost-and-cleanup.md) | The three teardown layers and what each one misses |
 | [CI pipeline](docs/ci-pipeline.md) | The workflow, step by step |
 | [Local development](docs/local-development.md) | Three ways to run it; full config reference |
-| [ADRs](docs/adr/) | The eleven decisions worth arguing about |
+| [ADRs](docs/adr/) | The twelve decisions worth arguing about |
+| [Maintenance](MAINTENANCE.md) | What updates itself, what needs a person, and the settings it relies on |
 
 Runbooks, an FAQ and longer-form background live in the
 [wiki](https://github.com/AKogut/ephemeral-k8s-test-envs/wiki).

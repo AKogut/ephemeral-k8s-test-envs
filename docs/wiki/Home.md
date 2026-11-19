@@ -50,6 +50,10 @@ small. It exists to make a multi-pod namespace and a real service-to-service cal
 4. **Cleanup as a tested property.** Three independent layers, and a CI step that
    fails the build if anything survives.
 
+**Status: maintenance** since 2026-11-19. Updates and security fixes merge by
+themselves once the full pipeline passes, and a `main` that stays red opens an
+issue. See [MAINTENANCE.md](https://github.com/AKogut/ephemeral-k8s-test-envs/blob/main/MAINTENANCE.md).
+
 ## Numbers from a real run
 
 | | |
@@ -59,7 +63,7 @@ small. It exists to make a multi-pod namespace and a real service-to-service cal
 | Shard balance | 96.4% of a perfect split |
 | Speedup | 3.27× versus sequential |
 | Image size | 491 MB → 98 MB compressed (80% smaller) via multi-stage builds |
-| Unit tests | 213, covering the planner, the merge, the Job-status logic, the weights, the fleet report and the Kubernetes, S3 and zip clients |
+| Unit tests | 214, covering the planner, the merge, the Job-status logic, the weights, the fleet report and the Kubernetes, S3 and zip clients |
 
 ## Project management
 

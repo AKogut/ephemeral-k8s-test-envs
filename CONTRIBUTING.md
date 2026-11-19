@@ -1,5 +1,9 @@
 # Contributing
 
+The repository is in maintenance: see [MAINTENANCE.md](MAINTENANCE.md) for what
+updates itself and what still needs a person. Bug reports and fixes are welcome.
+New features are unlikely to be merged.
+
 This is a portfolio project, but it is set up the way a working repository should
 be, and pull requests are welcome. Participating means following the
 [Code of Conduct](CODE_OF_CONDUCT.md), which is one screen long and amounts to
@@ -47,7 +51,7 @@ and it saves you writing a branch nobody had agreed to.
 npm install              # the linter, at the root
 npm run install:all      # dependencies for all five packages
 npm run build            # compile the three services and the scripts
-npm run test:unit        # 213 unit tests, no cluster required
+npm run test:unit        # 214 unit tests, no cluster required
 ```
 
 Both installs are needed before linting: the rules are type-aware, so ESLint
